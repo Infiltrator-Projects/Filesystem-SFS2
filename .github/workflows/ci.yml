@@ -23,3 +23,15 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ctest --test-dir build --output-on-failure
+
+      - name: Verify exactly one PDF per runtime SO
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="$(mktemp -d)"
+          trap 'rm -rf "$stage"' EXIT
+          DESTDIR="$stage" cmake --install build
+          test "$(find "$stage" -type f | wc -l)" -eq 2
+          test -f "$stage/System/Filesystems/SFS2.so"
+          test -f "$stage/System/Resources/Documentation/Filesystem-SFS2/SFS2.pdf"
+          test "$(head -c 5 "$stage/System/Resources/Documentation/Filesystem-SFS2/SFS2.pdf")" = '%PDF-'
