@@ -1,0 +1,7 @@
+{
+  "repository": "Filesystem-SFS2",
+  "module": "SFS2.so",
+  "pdf": "docs/SFS2.pdf",
+  "abi": "infiltrator_filesystem_sfs2_v1",
+  "build_system": "cmake"
+}

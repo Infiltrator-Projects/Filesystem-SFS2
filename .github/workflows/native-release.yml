@@ -1,0 +1,75 @@
+name: Qualify and publish SFS2 standalone two-file native installers
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: filesystem-sfs2-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install standalone build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential binutils cmake git pkg-config libssl-dev libsqlite3-dev dpkg-dev python3
+      - name: Package portable module and source-embedded CPU-native RUN
+        run: |
+          set -euo pipefail
+          python3 -m py_compile standalone/build.py standalone/release.py
+          python3 standalone/release.py release
+          test "$(find dist -maxdepth 1 -type f -name '*.deb' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -type f -name '*.run' | wc -l)" -eq 1
+      - name: Qualify RUN independently and enforce two-file payload
+        run: |
+          set -euo pipefail
+          bash dist/*.run --profile aggressive --build-only --output "$RUNNER_TEMP/native"
+          package="$(find "$RUNNER_TEMP/native" -type f -name '*.deb' -print -quit)"
+          test -s "$package"
+          test "$(dpkg-deb -f "$package" X-Infiltrator-Native-Profile)" = aggressive
+          test "$(dpkg-deb -f "$package" X-Infiltrator-PGO)" = trained-two-pass
+          test "$(dpkg-deb -f "$package" X-Infiltrator-Source-Revision)" = "$GITHUB_SHA"
+          mkdir -p "$RUNNER_TEMP/payload"
+          dpkg-deb -x "$package" "$RUNNER_TEMP/payload"
+          test "$(find "$RUNNER_TEMP/payload" -type f | wc -l)" -eq 2
+          test -s "$RUNNER_TEMP/payload/System/Filesystems/SFS2.so"
+          test -s "$RUNNER_TEMP/payload/System/Resources/Documentation/Filesystem-SFS2/SFS2.pdf"
+          test "$(head -c 5 "$RUNNER_TEMP/payload/System/Resources/Documentation/Filesystem-SFS2/SFS2.pdf")" = '%PDF-'
+          nm -D "$RUNNER_TEMP/payload/System/Filesystems/SFS2.so" | grep -F infiltrator_filesystem_sfs2_v1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sfs2-installers
+          path: dist/*
+          if-no-files-found: error
+  publish:
+    needs: qualify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sfs2-installers
+          path: dist
+      - uses: actions/checkout@v4
+      - name: Publish immutable qualified source installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 2
+          version="$(tr -d '\r\n' < VERSION)"
+          tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Existing immutable release $tag retained"
+            exit 0
+          fi
+          gh release create "$tag" dist/*.deb dist/*.run --target "$GITHUB_SHA" \
+            --title "SFS2 read-only module $version" \
+            --notes "SFS2 identity/geometry-only implementation, independent of SFS0. Portable DEB and source-embedded native RUN contain precisely SFS2.so and an illustrated PDF. Defrag, formatting, mutation, recovery and full independent-media support are NOT qualified."
