@@ -22,4 +22,7 @@ if(BUILD_TESTING)
     add_test(NAME sfs2-independent-module COMMAND sfs2-module-test)
 endif()
 install(TARGETS sfs2-driver LIBRARY DESTINATION /System/Filesystems)
-install(FILES include/ifs_sfs2_module_v1.h DESTINATION include)
+# Install only this filesystem's illustrated PDF beside its native shared object.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/SFS2.pdf"
+        DESTINATION /System/Resources/Documentation/Filesystem-SFS2)
+# ABI header is distributed in source, not installed as a runtime payload.
