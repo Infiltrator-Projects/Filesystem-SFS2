@@ -55,7 +55,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: native-filesystem-release
+          name: sfs2-installers
           path: dist
       - name: Prepare the pinned Linux build
         shell: bash
@@ -96,7 +96,7 @@ jobs:
           path: build/qualified/*
           if-no-files-found: error
   publish:
-    needs: qualify
+    needs: [qualify, kernel]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
@@ -107,12 +107,22 @@ jobs:
         with:
           name: sfs2-installers
           path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: qualified-kernel-package
+          path: kernel-qualified
+      - name: Include the qualified kernel module
+        run: |
+          set -euo pipefail
+          install -m 0644 kernel-qualified/*.deb dist/
+          install -m 0644 kernel-qualified/*.ko dist/
+          python3 standalone/check-package.py dist/*.deb --profile portable --kernel-release 6.12.107
       - name: Publish immutable qualified source installer
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 2
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 3
           version="$(tr -d '\r\n' < VERSION)"
           tag="v$version"
           if gh release view "$tag" >/dev/null 2>&1; then
@@ -121,4 +131,4 @@ jobs:
           fi
           gh release create "$tag" dist/*.deb dist/*.run dist/*.ko --target "$GITHUB_SHA" \
             --title "SFS2 read-only module $version" \
-            --notes "SFS2 identity/geometry-only implementation, independent of SFS0. Portable DEB and source-embedded native RUN contain precisely SFS2.so and an illustrated PDF. Defrag, formatting, mutation, recovery and full independent-media support are NOT qualified."
+            --notes "SFS2 identity/geometry-only implementation, independent of SFS0. Portable DEB and source-embedded native RUN contain SFS2.so, its generated manual and the qualified Linux adapter. Defrag, formatting, mutation, recovery and full independent-media support are NOT qualified."
