@@ -6,7 +6,7 @@ set(INFILTRATR_COMMON_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(INFILTRATR_COMMON_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(infiltratr_common
     GIT_REPOSITORY https://github.com/Infiltrator-Projects/Libraries.git
-    GIT_TAG f002d99f5971e6f55aa91b5a245b8307bba6b0ee)
+    GIT_TAG c73648ac55a8ca83199d46a24b6ec8ebb0b27b09)
 FetchContent_MakeAvailable(infiltratr_common)
 set_property(DIRECTORY "${infiltratr_common_SOURCE_DIR}"
              PROPERTY EXCLUDE_FROM_ALL TRUE)
