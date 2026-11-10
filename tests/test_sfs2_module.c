@@ -55,6 +55,7 @@ int main(void)
     int fd=mkstemp(path);
     void *volume=NULL;
     CHECK(fd>=0);
+    CHECK(ftruncate(fd, NB*BS)==0);
     CHECK(ifs_fs_api_v2_valid(api,"sfs2"));
     core=(const IfsFsCoreOpsV2 *)ifs_fs_group_v2(api,IFS_FS_GROUP_CORE);
     ops=(const IfsFsVolumeOpsV2 *)ifs_fs_group_v2(api,IFS_FS_GROUP_VOLUME);
