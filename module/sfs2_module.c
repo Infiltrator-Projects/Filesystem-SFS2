@@ -172,9 +172,33 @@ __attribute__((visibility("default")))
 const IfsFsModuleApiV1 *infiltrator_filesystem_api_v1(void) {
     return &common_v1;
 }
+/* The V2 ABI operates directly on a V2 runtime without using the
+ * transitional V1 table. Both APIs delegate to the one root validator. */
+static int v2_probe(const IfsFsHostRuntimeV2 *host, uint32_t *variant)
+{
+    IfsSfs2Geometry geometry = {0};
+    if (!ifs_fs_host_v2_valid(host) || !variant) return IFS_FS_INVALID;
+    if (inspect_io(host->context, host->read_at, host->volume_bytes,
+                   &geometry) != 0) return IFS_FS_NOT_FOUND;
+    *variant = geometry.structure_version;
+    return IFS_FS_OK;
+}
+static const IfsFsCoreOpsV1 v2_core = {
+    .header = {IFS_FS_GROUP_ABI_V1, sizeof(IfsFsCoreOpsV1),
+               IFS_FS_GROUP_CORE, 0u, IFS_FS_CORE_PROBE},
+    .probe = v2_probe
+};
+static const IfsFsGroupHeaderV2 *v2_query(uint32_t id,
+                                          uint32_t minimum,
+                                          uint32_t maximum)
+{
+    return id == IFS_FS_GROUP_CORE && minimum <= IFS_FS_GROUP_ABI_V1 &&
+        maximum >= IFS_FS_GROUP_ABI_V1 ? &v2_core.header : NULL;
+}
 static const IfsFsModuleApiV2 common_v2 = {
     IFS_FS_COMMON_ABI_V2, sizeof(IfsFsModuleApiV2), "sfs2",
-    IFS_FS_PROFILE_HOSTED, 0u, &common_v1, NULL
+    IFS_FS_PROFILE_HOSTED, IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE),
+    NULL, v2_query
 };
 __attribute__((visibility("default")))
 const IfsFsModuleApiV2 *infiltrator_filesystem_api_v2(void) {
