@@ -4,6 +4,8 @@
  */
 #include "sfs2_core.h"
 #include <infiltratr/filesystem_module_v2.h>
+__attribute__((used,section(".ifsmeta")))
+static const char strict_v2_identity[]="IFS-MODULE:sfs2:common2";
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
