@@ -2,6 +2,9 @@
  * Only disposable images are used. No external formatter or writable device.
  */
 #include "ifs_sfs2_module_v1.h"
+#include <infiltratr/filesystem_module_v2.h>
+extern const IfsFsModuleApiV1 *infiltrator_filesystem_api_v1(void);
+extern const IfsFsModuleApiV2 *infiltrator_filesystem_api_v2(void);
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -34,6 +37,11 @@ static void root(unsigned char *data,unsigned block,unsigned sequence) {
     be32(p+108,4u);be32(p+112,5u);
     be32(p+4,checksum(p));
 }
+static int host_read(void *ctx,uint64_t at,void *buf,uint32_t n) {
+    int fd=*(int *)ctx;
+    return at <= INT64_MAX && n <= (uint64_t)INT64_MAX-at &&
+        pread(fd,buf,n,(off_t)at)==(ssize_t)n ? 0:-1;
+}
 static int update(int fd,const unsigned char *data) {
     return pwrite(fd,data,NB*BS,0)==NB*BS ? 0:-1;
 }
@@ -50,6 +58,25 @@ int main(void) {
     CHECK(update(fd,data)==0);
     IfsSfs2Geometry geo={0};
     CHECK(api->probe(path)==0 && api->geometry(path,&geo)==0);
+    {
+        const IfsFsModuleApiV1 *common = infiltrator_filesystem_api_v1();
+        const IfsFsModuleApiV2 *v2 = infiltrator_filesystem_api_v2();
+        IfsFsHostIoV1 host = {0};
+        uint32_t variant = 0;
+        host.structure_bytes = sizeof(host);
+        host.flags = IFS_FS_IO_READ_ONLY;
+        host.context = &fd;
+        host.volume_bytes = sizeof(data);
+        host.read_at = host_read;
+        CHECK(ifs_fs_common_api_valid(common, "sfs2"));
+        CHECK(ifs_fs_api_v2_valid(v2, "sfs2"));
+        CHECK(v2->base_v1 == common &&
+              v2->runtime_profiles == IFS_FS_PROFILE_HOSTED &&
+              v2->group_mask == 0u);
+        CHECK(common->probe(&host,&variant)==IFS_FS_OK && variant==4u);
+        CHECK(common->mount==NULL && common->format==NULL &&
+              common->read==NULL && common->write==NULL);
+    }
     CHECK(geo.block_size==BS && geo.total_blocks==NB && geo.root_sequence==5);
     CHECK(geo.primary_root_valid && geo.backup_root_valid);
     /* Damaged primary: intact backup is accepted, without guessing SFS0. */
@@ -63,6 +90,16 @@ int main(void) {
     be32(data+(NB-1)*BS,0x53465300u);
     be32(data+(NB-1)*BS+4,checksum(data+(NB-1)*BS));
     CHECK(update(fd,data)==0 && api->probe(path)!=0);
+    {
+        IfsFsHostIoV1 host = {0};
+        uint32_t variant = 0;
+        host.structure_bytes = sizeof(host);
+        host.flags = IFS_FS_IO_READ_ONLY;
+        host.context = &fd;
+        host.volume_bytes = sizeof(data);
+        host.read_at = host_read;
+        CHECK(infiltrator_filesystem_api_v1()->probe(&host,&variant)!=IFS_FS_OK);
+    }
     /* Contradictory but individually checksummed redundant roots fail closed. */
     memset(data,0,sizeof(data));root(data,0,4);root(data,NB-1,5);
     be32(data+(NB-1)*BS+96,6u);
