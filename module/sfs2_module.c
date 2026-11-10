@@ -1,48 +1,26 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
- * Independent SFS\\2 identity/geometry reader. No SFS0 compatibility engine,
- * mutation, formatter, allocation or defragmentation capability is exported.
+ * SFS2.so: sole Common V2 ABI; independent checksum-verified root probe.
+ * No alternate historical export, pathname I/O or duplicate SFS engine.
  */
-#include "ifs_sfs2_module_v1.h"
 #include "sfs2_core.h"
 #include <infiltratr/filesystem_module_v2.h>
-#include <errno.h>
-#include <fcntl.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#ifdef __linux__
-#include <sys/ioctl.h>
-#include <linux/fs.h>
-#endif
+
+typedef struct {
+    uint32_t block_size,total_blocks,bitmap_base;
+    uint16_t structure_version,root_sequence;
+    uint64_t filesystem_bytes,device_bytes;
+    uint8_t primary_root_valid,backup_root_valid;
+} Sfs2Geometry;
+typedef int (*Sfs2ReadAt)(void *,uint64_t,void *,uint32_t);
 
 #define SFS2_MIN_BLOCK 512u
 #define SFS2_MAX_BLOCK 65536u
 static uint32_t be32(const unsigned char *p) {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
            ((uint32_t)p[2] << 8) | (uint32_t)p[3];
-}
-static int size_of_device(int fd, uint64_t *bytes) {
-    struct stat st;
-    if (fstat(fd, &st) != 0) return -1;
-    if (S_ISREG(st.st_mode)) {
-        if (st.st_size <= 0) return -1;
-        *bytes = (uint64_t)st.st_size;
-        return 0;
-    }
-#ifdef __linux__
-    if (S_ISBLK(st.st_mode)) return ioctl(fd, BLKGETSIZE64, bytes) == 0 ? 0 : -1;
-#endif
-    return -1;
-}
-typedef int (*Sfs2ReadAt)(void *, uint64_t, void *, uint32_t);
-static int read_fd(void *ctx, uint64_t offset, void *dst, uint32_t bytes)
-{
-    const int fd = *(const int *)ctx;
-    if (offset > INT64_MAX || bytes > (uint64_t)INT64_MAX - offset)
-        return -1;
-    return pread(fd,dst,bytes,(off_t)offset) == (ssize_t)bytes ? 0 : -1;
 }
 static int read_root(void *ctx, Sfs2ReadAt read_at, uint64_t device_bytes,
                      uint32_t block_size,
@@ -67,7 +45,7 @@ static int read_root(void *ctx, Sfs2ReadAt read_at, uint64_t device_bytes,
     return valid ? 0 : -1;
 }
 static int inspect_io(void *ctx, Sfs2ReadAt read_at,
-                      uint64_t device_bytes, IfsSfs2Geometry *geometry) {
+                      uint64_t device_bytes, Sfs2Geometry *geometry) {
     if (!geometry || !read_at || device_bytes < 4u * 512u) return -1;
     memset(geometry, 0, sizeof(*geometry));
     /* The primary may be damaged. Independently try a last-block backup at
@@ -121,70 +99,17 @@ static int inspect_io(void *ctx, Sfs2ReadAt read_at,
     geometry->backup_root_valid = (uint8_t)bvalid;
     return 0;
 }
-/* A legacy pathname API and Common host-I/O API share this same
- * checksum-validated root/geometry engine, never a second parser. */
-static int inspect_sfs2(const char *path, IfsSfs2Geometry *geometry) {
-    uint64_t size = 0u;
-    int rc;
-    if (!path || !*path) return -1;
-    const int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    if (fd < 0) return -1;
-    if (size_of_device(fd, &size) != 0) {
-        close(fd);
-        return -1;
-    }
-    rc = inspect_io((void *)&fd, read_fd, size, geometry);
-    close(fd);
-    return rc;
-}
-static int probe_sfs2(const char *path) {
-    IfsSfs2Geometry result;
-    return inspect_sfs2(path, &result);
-}
-static const IfsSfs2ModuleV1 module = {
-    IFS_SFS2_MODULE_ABI_V1, sizeof(IfsSfs2ModuleV1), "sfs2",
-    IFS_SFS2_CAP_PROBE | IFS_SFS2_CAP_GEOMETRY, probe_sfs2, inspect_sfs2
-};
-const IfsSfs2ModuleV1 *infiltrator_filesystem_sfs2_v1(void) {
-    return &module;
-}
-
-/* Common V1/V2 is additive. SFS2's portable runtime only validates root
- * identity/geometry, so never advertise unimplemented mount, VFS, defrag,
- * repair, formatting, or kernel/firmware capabilities. */
-static int common_probe(const IfsFsHostIoV1 *host, uint32_t *variant) {
-    IfsSfs2Geometry geometry = {0};
-    if (!host || host->structure_bytes < sizeof(*host) ||
-        !host->read_at || !variant) return IFS_FS_INVALID;
-    if (inspect_io(host->context, host->read_at, host->volume_bytes,
-                   &geometry) != 0) return IFS_FS_NOT_FOUND;
-    *variant = geometry.structure_version;
-    return IFS_FS_OK;
-}
-static const IfsFsModuleApiV1 common_v1 = {
-    .abi_version = IFS_FS_COMMON_ABI_V1,
-    .structure_bytes = sizeof(IfsFsModuleApiV1),
-    .format_id = "sfs2",
-    .capabilities = IFS_FS_CAP_PROBE,
-    .probe = common_probe
-};
-__attribute__((visibility("default")))
-const IfsFsModuleApiV1 *infiltrator_filesystem_api_v1(void) {
-    return &common_v1;
-}
-/* The V2 ABI operates directly on a V2 runtime without using the
- * transitional V1 table. Both APIs delegate to the one root validator. */
 static int v2_probe(const IfsFsHostRuntimeV2 *host, uint32_t *variant)
 {
-    IfsSfs2Geometry geometry = {0};
+    Sfs2Geometry geometry = {0};
     if (!ifs_fs_host_v2_valid(host) || !variant) return IFS_FS_INVALID;
     if (inspect_io(host->context, host->read_at, host->volume_bytes,
                    &geometry) != 0) return IFS_FS_NOT_FOUND;
     *variant = geometry.structure_version;
     return IFS_FS_OK;
 }
-static const IfsFsCoreOpsV1 v2_core = {
-    .header = {IFS_FS_GROUP_ABI_V1, sizeof(IfsFsCoreOpsV1),
+static const IfsFsCoreOpsV2 v2_core = {
+    .header = {IFS_FS_GROUP_ABI_V2, sizeof(IfsFsCoreOpsV2),
                IFS_FS_GROUP_CORE, 0u, IFS_FS_CORE_PROBE},
     .probe = v2_probe
 };
@@ -192,13 +117,13 @@ static const IfsFsGroupHeaderV2 *v2_query(uint32_t id,
                                           uint32_t minimum,
                                           uint32_t maximum)
 {
-    return id == IFS_FS_GROUP_CORE && minimum <= IFS_FS_GROUP_ABI_V1 &&
-        maximum >= IFS_FS_GROUP_ABI_V1 ? &v2_core.header : NULL;
+    return id == IFS_FS_GROUP_CORE && minimum <= IFS_FS_GROUP_ABI_V2 &&
+        maximum >= IFS_FS_GROUP_ABI_V2 ? &v2_core.header : NULL;
 }
 static const IfsFsModuleApiV2 common_v2 = {
     IFS_FS_COMMON_ABI_V2, sizeof(IfsFsModuleApiV2), "sfs2",
     IFS_FS_PROFILE_HOSTED, IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE),
-    NULL, v2_query
+    v2_query
 };
 __attribute__((visibility("default")))
 const IfsFsModuleApiV2 *infiltrator_filesystem_api_v2(void) {
