@@ -1,9 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
- * Only disposable images are used. No external formatter or writable device.
+ * Strict Common V2 probe on disposable SFS2 root images.
  */
-#include "ifs_sfs2_module_v1.h"
 #include <infiltratr/filesystem_module_v2.h>
-extern const IfsFsModuleApiV1 *infiltrator_filesystem_api_v1(void);
 extern const IfsFsModuleApiV2 *infiltrator_filesystem_api_v2(void);
 #include <fcntl.h>
 #include <stdint.h>
@@ -52,86 +50,50 @@ static void host_release(void *ctx,void *p) {
     (void)ctx;free(p);
 }
 int main(void) {
-    const IfsSfs2ModuleV1 *api=infiltrator_filesystem_sfs2_v1();
-    CHECK(api && api->abi_version==1u && api->structure_bytes>=sizeof(*api));
-    CHECK(!strcmp(api->format_id,"sfs2"));
-    CHECK(api->capabilities==(IFS_SFS2_CAP_PROBE|IFS_SFS2_CAP_GEOMETRY));
-    CHECK(api->probe && api->geometry && api->probe(NULL)!=0);
-    char path[]="/tmp/sfs2-library-test-XXXXXX";
-    int fd=mkstemp(path); CHECK(fd>=0);
+    const IfsFsModuleApiV2 *api=infiltrator_filesystem_api_v2();
+    const IfsFsCoreOpsV2 *core;
+    IfsFsHostRuntimeV2 host={0};
+    uint32_t variant=0;
+    char path[]="/tmp/sfs2-strict-v2-XXXXXX";
+    int fd=mkstemp(path);
     unsigned char data[NB*BS]={0};
+    CHECK(fd>=0);
+    CHECK(unlink(path)==0);
+    CHECK(ifs_fs_api_v2_valid(api,"sfs2"));
+    CHECK(api->group_mask==IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE));
+    core=(const IfsFsCoreOpsV2 *)ifs_fs_group_v2(api,IFS_FS_GROUP_CORE);
+    CHECK(core && core->header.capabilities==IFS_FS_CORE_PROBE &&
+          core->probe && !core->mount && !core->read && !core->write);
+    host.abi_version=IFS_FS_HOST_ABI_V2;
+    host.structure_bytes=sizeof(host);
+    host.capabilities=IFS_FS_HOST_READ_ONLY;
+    host.volume_bytes=sizeof(data);
+    host.logical_sector_bytes=BS;
+    host.physical_sector_bytes=BS;
+    host.maximum_transfer_bytes=BS;
+    host.context=&fd;
+    host.read_at=host_read;
+    host.allocate=host_alloc;
+    host.release=host_release;
+    CHECK(ifs_fs_host_v2_valid(&host));
     root(data,0u,4u);root(data,NB-1,5u);
     CHECK(update(fd,data)==0);
-    IfsSfs2Geometry geo={0};
-    CHECK(api->probe(path)==0 && api->geometry(path,&geo)==0);
-    {
-        const IfsFsModuleApiV1 *common = infiltrator_filesystem_api_v1();
-        const IfsFsModuleApiV2 *v2 = infiltrator_filesystem_api_v2();
-        IfsFsHostIoV1 host = {0};
-        uint32_t variant = 0;
-        host.structure_bytes = sizeof(host);
-        host.flags = IFS_FS_IO_READ_ONLY;
-        host.context = &fd;
-        host.volume_bytes = sizeof(data);
-        host.read_at = host_read;
-        CHECK(ifs_fs_common_api_valid(common, "sfs2"));
-        CHECK(ifs_fs_api_v2_valid(v2, "sfs2"));
-        CHECK(ifs_fs_api_v2_native_valid(v2, "sfs2"));
-        CHECK(v2->base_v1 == NULL &&
-              v2->runtime_profiles == IFS_FS_PROFILE_HOSTED &&
-              v2->group_mask == IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE));
-        {
-            const IfsFsCoreOpsV1 *core =
-                (const IfsFsCoreOpsV1 *)ifs_fs_group_v2(v2, IFS_FS_GROUP_CORE);
-            IfsFsHostRuntimeV2 h = {0};
-            h.abi_version = IFS_FS_HOST_ABI_V2;
-            h.structure_bytes = sizeof(h);
-            h.capabilities = IFS_FS_HOST_READ_ONLY;
-            h.volume_bytes = sizeof(data);
-            h.logical_sector_bytes = BS;
-            h.physical_sector_bytes = BS;
-            h.maximum_transfer_bytes = BS;
-            h.context = &fd;
-            h.read_at = host_read;
-            h.allocate = host_alloc;
-            h.release = host_release;
-            CHECK(core && core->header.capabilities == IFS_FS_CORE_PROBE);
-            CHECK(core->probe && !core->mount && !core->read && !core->write);
-            CHECK(ifs_fs_host_v2_valid(&h));
-            CHECK(core->probe(&h, &variant) == IFS_FS_OK && variant == 4u);
-        }
-        CHECK(common->probe(&host,&variant)==IFS_FS_OK && variant==4u);
-        CHECK(common->mount==NULL && common->format==NULL &&
-              common->read==NULL && common->write==NULL);
-    }
-    CHECK(geo.block_size==BS && geo.total_blocks==NB && geo.root_sequence==5);
-    CHECK(geo.primary_root_valid && geo.backup_root_valid);
-    /* Damaged primary: intact backup is accepted, without guessing SFS0. */
+    CHECK(core->probe(&host,&variant)==IFS_FS_OK && variant==4u);
     data[4]^=0x40u; CHECK(update(fd,data)==0);
-    CHECK(api->geometry(path,&geo)==0 && !geo.primary_root_valid && geo.backup_root_valid);
+    CHECK(core->probe(&host,&variant)==IFS_FS_OK);
     data[(NB-1)*BS+4]^=0x40u; CHECK(update(fd,data)==0);
-    CHECK(api->probe(path)!=0);
-    /* Correct checksum but SFS0 identity must be refused. */
+    CHECK(core->probe(&host,&variant)!=IFS_FS_OK);
     memset(data,0,sizeof(data));root(data,0,4);root(data,NB-1,5);
     be32(data,0x53465300u);be32(data+4,checksum(data));
     be32(data+(NB-1)*BS,0x53465300u);
     be32(data+(NB-1)*BS+4,checksum(data+(NB-1)*BS));
-    CHECK(update(fd,data)==0 && api->probe(path)!=0);
-    {
-        IfsFsHostIoV1 host = {0};
-        uint32_t variant = 0;
-        host.structure_bytes = sizeof(host);
-        host.flags = IFS_FS_IO_READ_ONLY;
-        host.context = &fd;
-        host.volume_bytes = sizeof(data);
-        host.read_at = host_read;
-        CHECK(infiltrator_filesystem_api_v1()->probe(&host,&variant)!=IFS_FS_OK);
-    }
-    /* Contradictory but individually checksummed redundant roots fail closed. */
+    CHECK(update(fd,data)==0);
+    CHECK(core->probe(&host,&variant)!=IFS_FS_OK);
     memset(data,0,sizeof(data));root(data,0,4);root(data,NB-1,5);
     be32(data+(NB-1)*BS+96,6u);
     be32(data+(NB-1)*BS+4,checksum(data+(NB-1)*BS));
-    CHECK(update(fd,data)==0 && api->probe(path)!=0);
-    CHECK(close(fd)==0);CHECK(unlink(path)==0);
+    CHECK(update(fd,data)==0);
+    CHECK(core->probe(&host,&variant)!=IFS_FS_OK);
+    CHECK(close(fd)==0);
     return 0;
 }
