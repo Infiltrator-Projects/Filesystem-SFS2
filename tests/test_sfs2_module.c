@@ -45,6 +45,12 @@ static int host_read(void *ctx,uint64_t at,void *buf,uint32_t n) {
 static int update(int fd,const unsigned char *data) {
     return pwrite(fd,data,NB*BS,0)==NB*BS ? 0:-1;
 }
+static void *host_alloc(void *ctx,size_t n) {
+    (void)ctx;return malloc(n);
+}
+static void host_release(void *ctx,void *p) {
+    (void)ctx;free(p);
+}
 int main(void) {
     const IfsSfs2ModuleV1 *api=infiltrator_filesystem_sfs2_v1();
     CHECK(api && api->abi_version==1u && api->structure_bytes>=sizeof(*api));
@@ -70,9 +76,30 @@ int main(void) {
         host.read_at = host_read;
         CHECK(ifs_fs_common_api_valid(common, "sfs2"));
         CHECK(ifs_fs_api_v2_valid(v2, "sfs2"));
-        CHECK(v2->base_v1 == common &&
+        CHECK(ifs_fs_api_v2_native_valid(v2, "sfs2"));
+        CHECK(v2->base_v1 == NULL &&
               v2->runtime_profiles == IFS_FS_PROFILE_HOSTED &&
-              v2->group_mask == 0u);
+              v2->group_mask == IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE));
+        {
+            const IfsFsCoreOpsV1 *core =
+                (const IfsFsCoreOpsV1 *)ifs_fs_group_v2(v2, IFS_FS_GROUP_CORE);
+            IfsFsHostRuntimeV2 h = {0};
+            h.abi_version = IFS_FS_HOST_ABI_V2;
+            h.structure_bytes = sizeof(h);
+            h.capabilities = IFS_FS_HOST_READ_ONLY;
+            h.volume_bytes = sizeof(data);
+            h.logical_sector_bytes = BS;
+            h.physical_sector_bytes = BS;
+            h.maximum_transfer_bytes = BS;
+            h.context = &fd;
+            h.read_at = host_read;
+            h.allocate = host_alloc;
+            h.release = host_release;
+            CHECK(core && core->header.capabilities == IFS_FS_CORE_PROBE);
+            CHECK(core->probe && !core->mount && !core->read && !core->write);
+            CHECK(ifs_fs_host_v2_valid(&h));
+            CHECK(core->probe(&h, &variant) == IFS_FS_OK && variant == 4u);
+        }
         CHECK(common->probe(&host,&variant)==IFS_FS_OK && variant==4u);
         CHECK(common->mount==NULL && common->format==NULL &&
               common->read==NULL && common->write==NULL);
