@@ -4,6 +4,7 @@
  */
 #include "ifs_sfs2_module_v1.h"
 #include "sfs2_core.h"
+#include <infiltratr/filesystem_module_v2.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
@@ -35,7 +36,16 @@ static int size_of_device(int fd, uint64_t *bytes) {
 #endif
     return -1;
 }
-static int read_root(int fd, uint64_t device_bytes, uint32_t block_size,
+typedef int (*Sfs2ReadAt)(void *, uint64_t, void *, uint32_t);
+static int read_fd(void *ctx, uint64_t offset, void *dst, uint32_t bytes)
+{
+    const int fd = *(const int *)ctx;
+    if (offset > INT64_MAX || bytes > (uint64_t)INT64_MAX - offset)
+        return -1;
+    return pread(fd,dst,bytes,(off_t)offset) == (ssize_t)bytes ? 0 : -1;
+}
+static int read_root(void *ctx, Sfs2ReadAt read_at, uint64_t device_bytes,
+                     uint32_t block_size,
                      uint32_t number, IfsSfs2RootRecord *record) {
     if (block_size < SFS2_MIN_BLOCK || block_size > SFS2_MAX_BLOCK ||
         (block_size & (block_size - 1u)) != 0u ||
@@ -44,9 +54,8 @@ static int read_root(int fd, uint64_t device_bytes, uint32_t block_size,
     unsigned char *buffer = malloc(block_size);
     if (!buffer) return -1;
     const uint64_t at = (uint64_t)number * block_size;
-    const ssize_t n = pread(fd, buffer, block_size, (off_t)at);
     const int valid =
-        n == (ssize_t)block_size &&
+        read_at(ctx, at, buffer, block_size) == 0 &&
         ifs_sfs2_validate_block_header(buffer, block_size, number, IFS_SFS2_ROOT_ID) &&
         ifs_sfs2_decode_root(buffer, block_size, record) == 0 &&
         ifs_sfs2_validate_root_record(record) == 0 &&
@@ -57,43 +66,37 @@ static int read_root(int fd, uint64_t device_bytes, uint32_t block_size,
     free(buffer);
     return valid ? 0 : -1;
 }
-static int inspect_sfs2(const char *path, IfsSfs2Geometry *geometry) {
-    if (!path || !*path || !geometry) return -1;
+static int inspect_io(void *ctx, Sfs2ReadAt read_at,
+                      uint64_t device_bytes, IfsSfs2Geometry *geometry) {
+    if (!geometry || !read_at || device_bytes < 4u * 512u) return -1;
     memset(geometry, 0, sizeof(*geometry));
-    const int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    if (fd < 0) return -1;
-    uint64_t device_bytes = 0;
-    if (size_of_device(fd, &device_bytes) != 0 || device_bytes < 4u * 512u) {
-        close(fd); return -1;
-    }
     /* The primary may be damaged. Independently try a last-block backup at
        each supported block size, never interpreting SFS0 as SFS2. */
     IfsSfs2RootRecord primary = {0}, backup = {0};
     int pvalid = 0, bvalid = 0;
     unsigned char probe[512];
-    if (pread(fd, probe, sizeof(probe), 0) == (ssize_t)sizeof(probe) &&
+    if (read_at(ctx,0,probe,sizeof(probe)) == 0 &&
         be32(probe) == IFS_SFS2_ROOT_ID) {
         const uint32_t bs = be32(probe + 52u);
         const uint32_t total = be32(probe + 48u);
         if (bs >= SFS2_MIN_BLOCK && bs <= SFS2_MAX_BLOCK &&
             (bs & (bs - 1u)) == 0u && total >= 4u &&
             (uint64_t)total * bs <= device_bytes) {
-            pvalid = read_root(fd, device_bytes, bs, 0u, &primary) == 0;
-            bvalid = read_root(fd, device_bytes, bs, total - 1u, &backup) == 0;
+            pvalid = read_root(ctx, read_at, device_bytes, bs, 0u, &primary) == 0;
+            bvalid = read_root(ctx, read_at, device_bytes, bs, total - 1u, &backup) == 0;
         }
     }
     if (!pvalid && !bvalid) {
         for (uint32_t bs = SFS2_MIN_BLOCK; bs <= SFS2_MAX_BLOCK; bs <<= 1u) {
             if (device_bytes % bs != 0u || device_bytes / bs > UINT32_MAX) continue;
             const uint32_t last = (uint32_t)(device_bytes / bs - 1u);
-            if (read_root(fd, device_bytes, bs, last, &backup) == 0 &&
+            if (read_root(ctx, read_at, device_bytes, bs, last, &backup) == 0 &&
                 backup.total_blocks == last + 1u) {
                 bvalid = 1;
                 break;
             }
         }
     }
-    close(fd);
     if (!pvalid && !bvalid) return -1;
     if (pvalid && bvalid &&
         (primary.block_size != backup.block_size ||
@@ -118,6 +121,22 @@ static int inspect_sfs2(const char *path, IfsSfs2Geometry *geometry) {
     geometry->backup_root_valid = (uint8_t)bvalid;
     return 0;
 }
+/* A legacy pathname API and Common host-I/O API share this same
+ * checksum-validated root/geometry engine, never a second parser. */
+static int inspect_sfs2(const char *path, IfsSfs2Geometry *geometry) {
+    uint64_t size = 0u;
+    int rc;
+    if (!path || !*path) return -1;
+    const int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd < 0) return -1;
+    if (size_of_device(fd, &size) != 0) {
+        close(fd);
+        return -1;
+    }
+    rc = inspect_io((void *)&fd, read_fd, size, geometry);
+    close(fd);
+    return rc;
+}
 static int probe_sfs2(const char *path) {
     IfsSfs2Geometry result;
     return inspect_sfs2(path, &result);
@@ -128,4 +147,36 @@ static const IfsSfs2ModuleV1 module = {
 };
 const IfsSfs2ModuleV1 *infiltrator_filesystem_sfs2_v1(void) {
     return &module;
+}
+
+/* Common V1/V2 is additive. SFS2's portable runtime only validates root
+ * identity/geometry, so never advertise unimplemented mount, VFS, defrag,
+ * repair, formatting, or kernel/firmware capabilities. */
+static int common_probe(const IfsFsHostIoV1 *host, uint32_t *variant) {
+    IfsSfs2Geometry geometry = {0};
+    if (!host || host->structure_bytes < sizeof(*host) ||
+        !host->read_at || !variant) return IFS_FS_INVALID;
+    if (inspect_io(host->context, host->read_at, host->volume_bytes,
+                   &geometry) != 0) return IFS_FS_NOT_FOUND;
+    *variant = geometry.structure_version;
+    return IFS_FS_OK;
+}
+static const IfsFsModuleApiV1 common_v1 = {
+    .abi_version = IFS_FS_COMMON_ABI_V1,
+    .structure_bytes = sizeof(IfsFsModuleApiV1),
+    .format_id = "sfs2",
+    .capabilities = IFS_FS_CAP_PROBE,
+    .probe = common_probe
+};
+__attribute__((visibility("default")))
+const IfsFsModuleApiV1 *infiltrator_filesystem_api_v1(void) {
+    return &common_v1;
+}
+static const IfsFsModuleApiV2 common_v2 = {
+    IFS_FS_COMMON_ABI_V2, sizeof(IfsFsModuleApiV2), "sfs2",
+    IFS_FS_PROFILE_HOSTED, 0u, &common_v1, NULL
+};
+__attribute__((visibility("default")))
+const IfsFsModuleApiV2 *infiltrator_filesystem_api_v2(void) {
+    return &common_v2;
 }
