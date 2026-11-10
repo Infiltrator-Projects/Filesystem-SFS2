@@ -42,7 +42,11 @@ jobs:
           test -s "$RUNNER_TEMP/payload/System/Filesystems/SFS2.so"
           test -s "$RUNNER_TEMP/payload/System/Resources/Documentation/Filesystem-SFS2.pdf"
           test "$(head -c 5 "$RUNNER_TEMP/payload/System/Resources/Documentation/Filesystem-SFS2.pdf")" = '%PDF-'
-          nm -D "$RUNNER_TEMP/payload/System/Filesystems/SFS2.so" | grep -F infiltrator_filesystem_sfs2_v1
+          nm -D "$RUNNER_TEMP/payload/System/Filesystems/SFS2.so" | grep -F infiltrator_filesystem_api_v2
+          if nm -D "$RUNNER_TEMP/payload/System/Filesystems/SFS2.so" | grep -E 'infiltrator_filesystem_.*_v1'; then
+            echo 'Retired V1 ABI leaked into native SFS2.so' >&2
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: sfs2-installers

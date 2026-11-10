@@ -17,7 +17,11 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
           cmake --build build --parallel 2
           test -f build/SFS2.so
-          nm -D build/SFS2.so | grep -F infiltrator_filesystem_sfs2_v1
+          nm -D build/SFS2.so | grep -F infiltrator_filesystem_api_v2
+          if nm -D build/SFS2.so | grep -E 'infiltrator_filesystem_.*_v1'; then
+            echo 'Retired V1 ABI leaked into SFS2.so' >&2
+            exit 1
+          fi
       - name: Qualify geometry and reject SFS0 and corrupt roots
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1

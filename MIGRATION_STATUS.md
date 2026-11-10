@@ -1,7 +1,13 @@
-# SFS2 source consolidation — 6 November 2026
+# SFS2 strict Common V2 migration — 11 November 2026
 
-Every file in the central `Filesystems` SFS2 source tree at main commit `a253fb724ce1fd760a361219281effb6abd71367` is now present in this independent repository. Its 4 existing identical canonical files were preserved; native Linux VFS adapter, original Aaru/Amipart reference implementations, and Windows adapter documentation were imported with source attribution unchanged.
+The independent SFS2.so now exports only `infiltrator_filesystem_api_v2`.
+Its CORE PROBE and read-only MOUNT callbacks use Common V2 host-sector reads,
+the repository's original SFS2 root codec and checksum validation, including
+backup-root recovery and contradictory-root refusal. VOLUME QUERY exposes
+verified block geometry. No V1 compatibility symbol, pathname-based engine
+entry point, raw writer, formatter or file-defrag callback is advertised.
 
-The SFS2 native Linux `Makefile` and `core_bridge.c` compile the in-repository SFS2 core and Linux adapter; the previous `kernel.json` inclusion of central SFS and a historical central source revision was removed. `sfs2.ko` now builds from this repository's source, while `SFS2.so` continues to use the independent module source.
-
-This establishes local source ownership, not yet end-to-end data safety, ABI, or kernel qualification; preserve and execute runtime regression tests before any release or removal of the central CI/build references.
+This is a read-only identity/geometry implementation, not qualification of
+namespace I/O, metadata updates, defragmentation, EFI or kernel runtime.
+The independently owned Linux SFS2 source/adapter remains in this repository
+and is not replaced by an OS-specific Common fallback.
