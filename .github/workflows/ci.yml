@@ -18,6 +18,7 @@ jobs:
           cmake --build build --parallel 2
           test -f build/SFS2.so
           nm -D build/SFS2.so | grep -Fq infiltrator_filesystem_api_v2
+          readelf -p .ifsmeta build/SFS2.so | grep -Fq 'IFS-MODULE:sfs2:common2'
           if nm -D build/SFS2.so | grep -Eq 'infiltrator_filesystem_.*_v1|infiltrator_filesystem_api_v1'; then
             echo "Retired filesystem export found" >&2
             exit 1
