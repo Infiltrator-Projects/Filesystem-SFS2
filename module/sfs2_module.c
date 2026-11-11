@@ -25,14 +25,10 @@ static uint32_t be32(const uint8_t *p)
 static int read_block(const IfsFsHostRuntimeV2 *h, uint64_t offset,
                       uint8_t *buffer, uint32_t bytes)
 {
-    uint32_t sector = h->logical_sector_bytes, n;
-    if (offset > h->volume_bytes || bytes > h->volume_bytes - offset ||
-        offset % sector || bytes % sector)
-        return IFS_FS_INVALID;
-    for (n = 0; n < bytes; n += sector)
-        if (h->read_at(h->context, offset + n, buffer + n, sector))
-            return IFS_FS_IO_ERROR;
-    return IFS_FS_OK;
+    /* The SFS2 logical root may be 512 bytes although the host's
+     * physical/logical I/O sector is 4096. Never send sub-sector reads to
+     * the host: Common V2 reconstructs byte ranges safely. */
+    return ifs_fs_host_read_bytes_v2(h, offset, buffer, bytes);
 }
 
 static int root_at(const IfsFsHostRuntimeV2 *h, uint32_t bs, uint32_t number,
@@ -41,7 +37,6 @@ static int root_at(const IfsFsHostRuntimeV2 *h, uint32_t bs, uint32_t number,
     uint8_t *buffer;
     int valid;
     if (bs < MIN_BLOCK || bs > MAX_BLOCK || (bs & (bs - 1u)) ||
-        bs < h->logical_sector_bytes ||
         number >= h->volume_bytes / bs)
         return 0;
     buffer = h->allocate(h->context, bs);
@@ -91,8 +86,7 @@ static int inspect(const IfsFsHostRuntimeV2 *h, Sfs2Volume *out)
     if (!pvalid && !bvalid) {
         for (bs = MIN_BLOCK; bs <= MAX_BLOCK; bs <<= 1u) {
             uint32_t last;
-            if (h->logical_sector_bytes > bs ||
-                h->volume_bytes % bs ||
+            if (h->volume_bytes % bs ||
                 h->volume_bytes / bs > UINT32_MAX)
                 continue;
             last = (uint32_t)(h->volume_bytes / bs - 1u);

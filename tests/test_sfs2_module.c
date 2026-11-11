@@ -36,8 +36,12 @@ static void root(unsigned char *data,unsigned block,unsigned sequence)
     be32(p+96,1u);be32(p+100,2u);be32(p+104,3u);
     be32(p+108,4u);be32(p+112,5u);be32(p+4,checksum(p));
 }
+static uint32_t sector_bytes=512u;
 static int rd(void *ctx,uint64_t at,void *dest,uint32_t n)
-{ return pread(*(int *)ctx,dest,n,(off_t)at)==(ssize_t)n?0:-1; }
+{
+    if(at%sector_bytes || n%sector_bytes || n>sector_bytes)return -1;
+    return pread(*(int *)ctx,dest,n,(off_t)at)==(ssize_t)n?0:-1;
+}
 static void *allocate(void *p,size_t n) { (void)p; return malloc(n); }
 static void release(void *p,void *x) { (void)p; free(x); }
 static int update(int fd,const unsigned char *data)
@@ -84,6 +88,23 @@ int main(void)
     CHECK(ops->query(volume,&info)==IFS_FS_OK && info.block_bytes==BS);
     CHECK(core->unmount(volume)==IFS_FS_OK);
     volume=NULL;
+    /* 4Kn physical hosts must receive ONLY aligned full-sector reads;
+     * the SFS2 root and backup remain 512-byte on-media blocks. */
+    host.logical_sector_bytes=4096u;
+    host.physical_sector_bytes=4096u;
+    host.maximum_transfer_bytes=4096u;
+    sector_bytes=4096u;
+    CHECK(ifs_fs_host_v2_valid(&host));
+    CHECK(core->probe(&host,&variant)==IFS_FS_OK && variant==BS);
+    info.structure_bytes=sizeof(info);
+    CHECK(core->mount(&host,&volume,&info)==IFS_FS_OK && volume &&
+          info.block_bytes==BS && info.total_bytes==NB*BS);
+    CHECK(core->unmount(volume)==IFS_FS_OK);
+    volume=NULL;
+    host.logical_sector_bytes=BS;
+    host.physical_sector_bytes=BS;
+    host.maximum_transfer_bytes=BS;
+    sector_bytes=BS;
     data[4]^=0x40u;
     CHECK(update(fd,data)==0);
     CHECK(core->probe(&host,&variant)==IFS_FS_OK && variant==BS);
