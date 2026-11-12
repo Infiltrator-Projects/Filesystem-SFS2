@@ -4,7 +4,7 @@ The independent SFS2.so now exports only `infiltrator_filesystem_api_v2`.
 Its CORE PROBE and read-only MOUNT callbacks use Common V2 host-sector reads,
 the repository's original SFS2 root codec and checksum validation, including
 backup-root recovery and contradictory-root refusal. VOLUME QUERY exposes
-verified block geometry. No V1 compatibility symbol, pathname-based engine
+verified block geometry. No format-specific compatibility symbol, pathname-based engine
 entry point, raw writer, formatter or file-defrag callback is advertised.
 
 This is a read-only identity/geometry implementation, not qualification of
