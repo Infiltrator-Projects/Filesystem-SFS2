@@ -12,6 +12,7 @@ enum { MIN_BLOCK = 512, MAX_BLOCK = 65536 };
 typedef struct {
     const IfsFsHostRuntimeV2 *host;
     uint32_t block_size, total_blocks, bitmap_base;
+    uint64_t verified_free_blocks;
     uint16_t root_sequence;
     uint8_t primary_valid, backup_valid;
 } Sfs2Volume;
@@ -121,6 +122,40 @@ static int inspect(const IfsFsHostRuntimeV2 *h, Sfs2Volume *out)
     return IFS_FS_OK;
 }
 
+/* Native SFS2 allocation: checked BTMP blocks, MSB-first free bits and
+ * the independently shared SFS2 bitmap geometry. No V1 services or fd. */
+static int count_free_bitmap(const Sfs2Volume *v,uint64_t *verified)
+{
+    uint32_t bits_per=0u,groups=0u;
+    uint64_t free_total=0u;
+    const IfsFsHostRuntimeV2 *h=v->host;
+    if(!h || !verified ||
+       ifs_sfs2_compute_bitmap_layout(v->block_size,v->total_blocks,
+                                      &bits_per,&groups)!=0 ||
+       !bits_per || !groups ||
+       (uint64_t)v->bitmap_base+groups>v->total_blocks)
+        return IFS_FS_CORRUPT;
+    uint8_t *raw=h->allocate(h->context,v->block_size);
+    if(!raw)return IFS_FS_NO_MEMORY;
+    int rc=IFS_FS_OK;
+    for(uint32_t i=0u;i<groups;++i) {
+        uint32_t number=v->bitmap_base+i;
+        uint64_t first=(uint64_t)i*bits_per,count=v->total_blocks-first;
+        if(count>bits_per)count=bits_per;
+        rc=read_block(h,(uint64_t)number*v->block_size,raw,v->block_size);
+        if(rc!=IFS_FS_OK)break;
+        if(!ifs_sfs2_validate_block_header(raw,v->block_size,number,
+                                           UINT32_C(0x42544d50))) {
+            rc=IFS_FS_CORRUPT;break;
+        }
+        for(uint64_t bit=0u;bit<count;++bit)
+            free_total+=(raw[IFS_SFS2_BLOCK_HEADER_SIZE+(bit>>3u)] &
+                         (uint8_t)(0x80u>>(bit&7u)))!=0u;
+    }
+    h->release(h->context,raw);
+    if(rc==IFS_FS_OK)*verified=free_total;
+    return rc;
+}
 static int probe(const IfsFsHostRuntimeV2 *h, uint32_t *variant)
 {
     Sfs2Volume volume = {0};
@@ -141,7 +176,7 @@ static void volume_info(const Sfs2Volume *v, IfsFsVolumeInfoV2 *info)
     info->max_name_bytes = IFS_SFS2_MAX_FILENAME;
     info->block_bytes = v->block_size;
     info->total_bytes = (uint64_t)v->block_size * v->total_blocks;
-    info->free_bytes = 0u; /* Not independently measured; do not guess. */
+    info->free_bytes = v->verified_free_blocks * v->block_size;
 }
 
 static int mount(const IfsFsHostRuntimeV2 *h, void **volume,
@@ -157,6 +192,9 @@ static int mount(const IfsFsHostRuntimeV2 *h, void **volume,
     if (!(h->capabilities & IFS_FS_HOST_READ_ONLY))
         return IFS_FS_ACCESS; /* Unqualified writable mount is forbidden. */
     rc = inspect(h, &candidate);
+    if (rc != IFS_FS_OK)
+        return rc;
+    rc = count_free_bitmap(&candidate,&candidate.verified_free_blocks);
     if (rc != IFS_FS_OK)
         return rc;
     owned = h->allocate(h->context, sizeof(*owned));

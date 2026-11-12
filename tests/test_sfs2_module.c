@@ -36,6 +36,22 @@ static void root(unsigned char *data,unsigned block,unsigned sequence)
     be32(p+96,1u);be32(p+100,2u);be32(p+104,3u);
     be32(p+108,4u);be32(p+112,5u);be32(p+4,checksum(p));
 }
+static void bitmap(unsigned char *data)
+{
+    unsigned char *p=data+BS;
+    memset(p,0,BS);
+    be32(p,UINT32_C(0x42544d50));be32(p+8u,1u);
+    for(unsigned bit=0u;bit<NB;++bit)
+        p[IFS_SFS2_BLOCK_HEADER_SIZE+(bit>>3u)] |=
+            (unsigned char)(0x80u>>(bit&7u));
+    const unsigned used[]={0u,1u,2u,3u,4u,5u,NB-1u};
+    for(unsigned i=0u;i<sizeof(used)/sizeof(used[0]);++i) {
+        unsigned bit=used[i];
+        p[IFS_SFS2_BLOCK_HEADER_SIZE+(bit>>3u)] &=
+            (unsigned char)~(0x80u>>(bit&7u));
+    }
+    be32(p+4u,checksum(p));
+}
 static uint32_t sector_bytes=512u;
 static int rd(void *ctx,uint64_t at,void *dest,uint32_t n)
 {
@@ -79,15 +95,22 @@ int main(void)
     CHECK(ifs_fs_host_v2_valid(&host));
     CHECK(core->probe(&host,&variant)==IFS_FS_NOT_FOUND);
     root(data,0u,4u);root(data,NB-1u,5u);
+    bitmap(data);
     CHECK(update(fd,data)==0);
     CHECK(core->probe(&host,&variant)==IFS_FS_OK && variant==BS);
     info.structure_bytes=sizeof(info);
     CHECK(core->mount(&host,&volume,&info)==IFS_FS_OK && volume);
-    CHECK(info.block_bytes==BS && info.total_bytes==NB*BS);
+    CHECK(info.block_bytes==BS && info.total_bytes==NB*BS &&
+          info.free_bytes==9u*BS);
     info.structure_bytes=sizeof(info);
     CHECK(ops->query(volume,&info)==IFS_FS_OK && info.block_bytes==BS);
     CHECK(core->unmount(volume)==IFS_FS_OK);
     volume=NULL;
+    data[BS+4u]^=1u; /* damaged bitmap checksum */
+    CHECK(update(fd,data)==0);
+    info.structure_bytes=sizeof(info);
+    CHECK(core->mount(&host,&volume,&info)==IFS_FS_CORRUPT && !volume);
+    data[BS+4u]^=1u;CHECK(update(fd,data)==0);
     /* 4Kn physical hosts must receive ONLY aligned full-sector reads;
      * the SFS2 root and backup remain 512-byte on-media blocks. */
     host.logical_sector_bytes=4096u;
@@ -112,11 +135,13 @@ int main(void)
     CHECK(update(fd,data)==0);
     CHECK(core->probe(&host,&variant)!=IFS_FS_OK);
     memset(data,0,sizeof(data));root(data,0u,4u);root(data,NB-1u,5u);
+    bitmap(data);
     be32(data,0x53465300u);be32(data+4,checksum(data));
     be32(data+(NB-1)*BS,0x53465300u);
     be32(data+(NB-1)*BS+4,checksum(data+(NB-1)*BS));
     CHECK(update(fd,data)==0 && core->probe(&host,&variant)!=IFS_FS_OK);
     memset(data,0,sizeof(data));root(data,0u,4u);root(data,NB-1u,5u);
+    bitmap(data);
     be32(data+(NB-1)*BS+96,6u);
     be32(data+(NB-1)*BS+4,checksum(data+(NB-1)*BS));
     CHECK(update(fd,data)==0 && core->probe(&host,&variant)==IFS_FS_CORRUPT);
