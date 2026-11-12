@@ -2,6 +2,7 @@
  * Disposable SFS2 images, no path-level I/O or legacy interface.
  */
 #include <infiltratr/filesystem_module_v2.h>
+#include "../native/filesystems/sfs2/core/sfs2_core.h"
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
