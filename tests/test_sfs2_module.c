@@ -105,7 +105,27 @@ int main(void)
           info.free_bytes==9u*BS);
     info.structure_bytes=sizeof(info);
     CHECK(ops->query(volume,&info)==IFS_FS_OK && info.block_bytes==BS);
-    CHECK(core->unmount(volume)==IFS_FS_OK);
+    {
+        void *second=NULL;
+        IfsFsVolumeInfoV2 other={.structure_bytes=sizeof(other)};
+        CHECK(core->mount(&host,&second,&other)==IFS_FS_OK &&
+              second && second!=volume);
+        CHECK(other.free_bytes==info.free_bytes &&
+              other.total_bytes==info.total_bytes);
+        other.structure_bytes=sizeof(other);
+        CHECK(ops->query(second,&other)==IFS_FS_OK);
+        CHECK(core->unmount(second)==IFS_FS_OK);
+        other.structure_bytes=sizeof(other);
+        CHECK(ops->query(second,&other)==IFS_FS_INVALID);
+        CHECK(core->unmount(second)==IFS_FS_INVALID);
+    }
+    {
+        void *stale=volume;
+        CHECK(core->unmount(volume)==IFS_FS_OK);
+        info.structure_bytes=sizeof(info);
+        CHECK(ops->query(stale,&info)==IFS_FS_INVALID);
+        CHECK(core->unmount(stale)==IFS_FS_INVALID);
+    }
     volume=NULL;
     data[BS+4u]^=1u; /* damaged bitmap checksum */
     CHECK(update(fd,data)==0);

@@ -1,13 +1,19 @@
-# SFS2 strict Common V2 migration — 11 November 2026
+# SFS2 Common V2 migration status — 20 November 2026
 
-The independent SFS2.so now exports only `infiltrator_filesystem_api_v2`.
-Its CORE PROBE and read-only MOUNT callbacks use Common V2 host-sector reads,
-the repository's original SFS2 root codec and checksum validation, including
-backup-root recovery and contradictory-root refusal. VOLUME QUERY exposes
-verified block geometry. No format-specific compatibility symbol, pathname-based engine
-entry point, raw writer, formatter or file-defrag callback is advertised.
+SFS2 already implements only Common V2 and uses its format-owned
+`native/filesystems/sfs2/core/` for root, checksum, allocation and
+object-structure validation. The hosted provider's former heap-pointer
+volume handle could be dereferenced after unmount. It now stores validated
+volume metadata in the canonical bounded V2 session registry, refusing
+stale/unmounted handles, supporting concurrent volumes and returning proper
+BUSY when the bounded registry is exhausted. The actual on-disk root and
+bitmap checksum validators remain unchanged.
 
-This is a read-only identity/geometry implementation, not qualification of
-namespace I/O, metadata updates, defragmentation, EFI or kernel runtime.
-The independently owned Linux SFS2 source/adapter remains in this repository
-and is not replaced by an OS-specific Common fallback.
+**Not BOOT-qualified:** the V2 module still lacks genuine object B-tree and
+extent traversal, Common V2 STAT/LIST/READ, a freestanding firmware ELF,
+production BOOT validation and disposable OVMF kernel/initramfs tests.
+The module must not masquerade as a boot reader.
+
+CI packages exactly the hosted SFS2.so and its PDF in portable DEB and native
+RUN. No kernel .ko substitute is included, and no new release is published
+until relevant firmware/read tests pass.

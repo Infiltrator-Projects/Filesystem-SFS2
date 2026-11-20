@@ -6,7 +6,7 @@ set(INFILTRATR_COMMON_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(INFILTRATR_COMMON_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(infiltratr_common
  GIT_REPOSITORY https://github.com/Infiltrator-Projects/Libraries.git
- GIT_TAG 4c92c8dcd7e03afd4bab3105e143dbabd72c8adc)
+ GIT_TAG d23a52693fd3212368d327e1c1302e07ae9510ec)
 FetchContent_MakeAvailable(infiltratr_common)
 set_property(DIRECTORY "${infiltratr_common_SOURCE_DIR}" PROPERTY EXCLUDE_FROM_ALL TRUE)
 include(CTest)
@@ -23,7 +23,8 @@ target_include_directories(sfs2-driver PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/native/filesystems/sfs2/core")
 target_compile_definitions(sfs2-driver PRIVATE _GNU_SOURCE _FILE_OFFSET_BITS=64)
 target_compile_options(sfs2-driver PRIVATE -Wall -Wextra -Wpedantic -Werror -fvisibility=hidden)
-target_link_options(sfs2-driver PRIVATE -Wl,-z,defs)
+target_link_options(sfs2-driver PRIVATE -Wl,-z,defs
+  "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/module/v2-only.map")
 target_link_libraries(sfs2-driver PRIVATE InfiltratrCommon::Common)
 if(BUILD_TESTING)
     add_executable(sfs2-module-test tests/test_sfs2_module.c)
@@ -31,6 +32,9 @@ if(BUILD_TESTING)
     target_compile_definitions(sfs2-module-test PRIVATE _GNU_SOURCE _FILE_OFFSET_BITS=64)
     target_compile_options(sfs2-module-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME sfs2-independent-module COMMAND sfs2-module-test)
+    add_test(NAME sfs2-production-v2-exports
+        COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_v2_exports.sh"
+                "$<TARGET_FILE:sfs2-driver>")
 endif()
 install(TARGETS sfs2-driver LIBRARY DESTINATION /System/Filesystems)
 # Install only this filesystem's illustrated PDF beside its native shared object.

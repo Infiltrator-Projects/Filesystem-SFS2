@@ -3,6 +3,7 @@
  * Exclusively Common V2: no path I/O, OS APIs or previous ABI export.
  */
 #include <infiltratr/filesystem_module_v2.h>
+#include <infiltratr/filesystem_ro_sessions_v2.h>
 #include "sfs2_core.h"
 #include <stdint.h>
 #include <string.h>
@@ -179,10 +180,15 @@ static void volume_info(const Sfs2Volume *v, IfsFsVolumeInfoV2 *info)
     info->free_bytes = v->verified_free_blocks * v->block_size;
 }
 
+/* A query-after-unmount must never dereference host-owned freed memory.
+ * This provider is metadata-only: use the canonical bounded V2 registry
+ * rather than accepting heap addresses as unvalidated volume handles. */
+static IfsFsReadOnlySessionsV2 sessions = IFS_FS_RO_SESSIONS_INIT_V2;
 static int mount(const IfsFsHostRuntimeV2 *h, void **volume,
                  IfsFsVolumeInfoV2 *info)
 {
-    Sfs2Volume candidate = {0}, *owned;
+    Sfs2Volume candidate = {0};
+    IfsFsVolumeInfoV2 measured = {0};
     int rc;
     if (!volume || !info || info->structure_bytes < sizeof(*info))
         return IFS_FS_INVALID;
@@ -190,38 +196,23 @@ static int mount(const IfsFsHostRuntimeV2 *h, void **volume,
     if (!ifs_fs_host_v2_valid(h))
         return IFS_FS_INVALID;
     if (!(h->capabilities & IFS_FS_HOST_READ_ONLY))
-        return IFS_FS_ACCESS; /* Unqualified writable mount is forbidden. */
+        return IFS_FS_ACCESS;
     rc = inspect(h, &candidate);
     if (rc != IFS_FS_OK)
         return rc;
-    rc = count_free_bitmap(&candidate,&candidate.verified_free_blocks);
+    rc = count_free_bitmap(&candidate, &candidate.verified_free_blocks);
     if (rc != IFS_FS_OK)
         return rc;
-    owned = h->allocate(h->context, sizeof(*owned));
-    if (!owned)
-        return IFS_FS_NO_MEMORY;
-    *owned = candidate;
-    volume_info(owned, info);
-    *volume = owned;
-    return IFS_FS_OK;
+    volume_info(&candidate, &measured);
+    return ifs_fs_ro_session_open_v2(&sessions, &measured, volume, info);
 }
-
 static int unmount(void *volume)
 {
-    Sfs2Volume *v = volume;
-    if (!v || !v->host)
-        return IFS_FS_INVALID;
-    v->host->release(v->host->context, v);
-    return IFS_FS_OK;
+    return ifs_fs_ro_session_close_v2(&sessions, volume);
 }
-
 static int query(void *volume, IfsFsVolumeInfoV2 *info)
 {
-    Sfs2Volume *v = volume;
-    if (!v || !info || info->structure_bytes < sizeof(*info))
-        return IFS_FS_INVALID;
-    volume_info(v, info);
-    return IFS_FS_OK;
+    return ifs_fs_ro_session_query_v2(&sessions, volume, info);
 }
 
 static const IfsFsCoreOpsV2 core = {
