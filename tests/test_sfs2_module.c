@@ -53,6 +53,78 @@ static void bitmap(unsigned char *data)
     }
     be32(p+4u,checksum(p));
 }
+/* Real SFS\2 namespace fixture: two kernel-like files, nested directory,
+ * checksummed object containers, and a genuine extent B-tree. Every byte
+ * lives in the disposable 16-block image, never in a source volume. */
+static void structured(unsigned char *disk,uint32_t block,uint32_t id)
+{
+    unsigned char *p=disk+BS*block;
+    memset(p,0,BS);
+    be32(p,id);be32(p+8u,block);
+    be32(p+4u,checksum(p));
+}
+static uint32_t object(unsigned char *block,uint32_t off,uint32_t node,
+                       uint32_t data,uint32_t auxiliary,uint16_t size_low,
+                       uint8_t bits,const char *name)
+{
+    size_t n=strlen(name);
+    be32(block+off+4u,node);
+    be32(block+off+12u,data);
+    be32(block+off+16u,auxiliary);
+    be16(block+off+20u,size_low);
+    block[off+26u]=bits;
+    memcpy(block+off+27u,name,n+1u);
+    block[off+27u+n+1u]=0; /* zero-length comment */
+    return (uint32_t)((off+27u+n+2u+1u)&~1u);
+}
+static void namespace_fixture(unsigned char *disk)
+{
+    const unsigned used[]={6u,7u,8u,9u,11u,12u};
+    memset(disk,0,NB*BS);
+    root(disk,0u,4u);root(disk,NB-1u,5u);
+    for(unsigned i=0u;i<2u;++i) {
+        unsigned char *p=disk+(i?NB-1u:0u)*BS;
+        be32(p+108u,6u); /* extent tree root */
+        be32(p+112u,7u); /* object-node table */
+        be32(p+4u,checksum(p));
+    }
+    bitmap(disk);
+    unsigned char *bm=disk+BS;
+    for(unsigned i=0u;i<sizeof(used)/sizeof(used[0]);++i) {
+        const unsigned bit=used[i];
+        bm[12u+(bit>>3u)]&=(unsigned char)~(0x80u>>(bit&7u));
+    }
+    be32(bm+4u,checksum(bm));
+    structured(disk,2u,UINT32_C(0x41444d43)); /* ADMC */
+    structured(disk,3u,UINT32_C(0x4f424a43)); /* root OBJC */
+    unsigned char *p=disk+3u*BS;
+    object(p,24u,1u,4u,8u,0u,128u,"VOLUME");
+    be32(p+4u,checksum(p));
+    structured(disk,4u,UINT32_C(0x48544142)); /* HTAB */
+    structured(disk,5u,UINT32_C(0x54524f4b)); /* TROK */
+    structured(disk,6u,UINT32_C(0x424e4443)); /* extent BNDC leaf */
+    p=disk+6u*BS;
+    be16(p+12u,2u);p[14u]=1u;p[15u]=16u;
+    be32(p+16u,9u);be32(p+28u,1u);
+    be32(p+32u,12u);be32(p+44u,1u);
+    be32(p+4u,checksum(p));
+    structured(disk,7u,UINT32_C(0x4e444320)); /* NDC */
+    p=disk+7u*BS;be32(p+12u,1u);be32(p+16u,1u);
+    be32(p+4u,checksum(p));
+    structured(disk,8u,UINT32_C(0x4f424a43)); /* root children */
+    p=disk+8u*BS;be32(p+12u,1u);
+    uint32_t at=object(p,24u,3u,9u,0u,BS,0u,"KERNEL.BIN");
+    object(p,at,4u,0u,11u,0u,128u,"BOOT");
+    be32(p+4u,checksum(p));
+    structured(disk,11u,UINT32_C(0x4f424a43)); /* BOOT children */
+    p=disk+11u*BS;be32(p+12u,4u);
+    object(p,24u,5u,12u,0u,256u,0u,"INITRD.IMG");
+    be32(p+4u,checksum(p));
+    for(unsigned i=0u;i<BS;++i)
+        disk[9u*BS+i]=(unsigned char)(i*31u+7u);
+    for(unsigned i=0u;i<256u;++i)
+        disk[12u*BS+i]=(unsigned char)(i^0xa5u);
+}
 static uint32_t sector_bytes=512u;
 static int rd(void *ctx,uint64_t at,void *dest,uint32_t n)
 {
@@ -149,6 +221,66 @@ int main(void)
     host.physical_sector_bytes=BS;
     host.maximum_transfer_bytes=BS;
     sector_bytes=BS;
+    {
+        unsigned char original[NB*BS],readback[NB*BS]={0};
+        unsigned char bytes[BS]={0};
+        char name[256]={0};
+        IfsFsEntryV2 entry={0};
+        entry.structure_bytes=sizeof(entry);
+        entry.name=name;entry.name_capacity=sizeof(name);
+        memcpy(original,data,sizeof(original));
+        namespace_fixture(data);
+        CHECK(update(fd,data)==0);
+        CHECK(core->probe(&host,&variant)==IFS_FS_OK);
+        info.structure_bytes=sizeof(info);
+        CHECK(core->mount(&host,&volume,&info)==IFS_FS_OK && volume);
+        CHECK(core->stat && core->directory_entry && core->read);
+        CHECK(core->stat(volume,"/",&entry)==IFS_FS_OK &&
+              entry.type==IFS_FS_ENTRY_DIRECTORY);
+        CHECK(core->stat(volume,"/KERNEL.BIN",&entry)==IFS_FS_OK &&
+              entry.type==IFS_FS_ENTRY_FILE && entry.size_bytes==BS);
+        CHECK(core->stat(volume,"/BOOT/INITRD.IMG",&entry)==IFS_FS_OK &&
+              entry.size_bytes==256u);
+        CHECK(core->stat(volume,"/MISSING",&entry)==IFS_FS_NOT_FOUND);
+        CHECK(core->directory_entry(volume,"/",0u,&entry)==IFS_FS_OK &&
+              strcmp(entry.name,"KERNEL.BIN")==0);
+        CHECK(core->directory_entry(volume,"/",1u,&entry)==IFS_FS_OK &&
+              strcmp(entry.name,"BOOT")==0);
+        CHECK(core->directory_entry(volume,"/",2u,&entry)==IFS_FS_END);
+        CHECK(core->directory_entry(volume,"/BOOT",0u,&entry)==IFS_FS_OK &&
+              strcmp(entry.name,"INITRD.IMG")==0);
+        CHECK(core->read(volume,"/KERNEL.BIN",0u,bytes,BS)==IFS_FS_OK);
+        for(unsigned i=0u;i<BS;++i)
+            CHECK(bytes[i]==(unsigned char)(i*31u+7u));
+        CHECK(core->read(volume,"/BOOT/INITRD.IMG",0u,bytes,256u)==IFS_FS_OK);
+        for(unsigned i=0u;i<256u;++i)
+            CHECK(bytes[i]==(unsigned char)(i^0xa5u));
+        CHECK(core->read(volume,"/KERNEL.BIN",17u,bytes,79u)==IFS_FS_OK);
+        for(unsigned i=0u;i<79u;++i)
+            CHECK(bytes[i]==(unsigned char)((i+17u)*31u+7u));
+        CHECK(core->read(volume,"/MISSING",0u,bytes,1u)==IFS_FS_NOT_FOUND);
+        CHECK(core->read(volume,"/KERNEL.BIN",BS-1u,bytes,2u)==IFS_FS_INVALID);
+        CHECK(pread(fd,readback,sizeof(readback),0)==(ssize_t)sizeof(readback));
+        CHECK(memcmp(data,readback,sizeof(data))==0); /* strictly read-only */
+        data[6u*BS+4u]^=1u; /* checksummed extent tree damage */
+        CHECK(update(fd,data)==0);
+        CHECK(core->read(volume,"/KERNEL.BIN",0u,bytes,1u)==IFS_FS_CORRUPT);
+        data[6u*BS+4u]^=1u;
+        CHECK(update(fd,data)==0);
+        be32(data+5u*BS,UINT32_C(0x54524641)); /* pending transaction */
+        be32(data+5u*BS+4u,checksum(data+5u*BS));
+        CHECK(update(fd,data)==0);
+        CHECK(core->stat(volume,"/KERNEL.BIN",&entry)==IFS_FS_UNSUPPORTED);
+        be32(data+5u*BS,UINT32_C(0x54524f4b));
+        be32(data+5u*BS+4u,checksum(data+5u*BS));
+        CHECK(update(fd,data)==0);
+        CHECK(core->read(volume,"/KERNEL.BIN",0u,bytes,16u)==IFS_FS_OK);
+        CHECK(core->unmount(volume)==IFS_FS_OK);
+        volume=NULL;
+        CHECK(core->read(volume,"/KERNEL.BIN",0u,bytes,16u)==IFS_FS_INVALID);
+        memcpy(data,original,sizeof(data));
+        CHECK(update(fd,data)==0);
+    }
     data[4]^=0x40u;
     CHECK(update(fd,data)==0);
     CHECK(core->probe(&host,&variant)==IFS_FS_OK && variant==BS);
