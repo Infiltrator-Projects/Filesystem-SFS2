@@ -35,26 +35,32 @@ static int read_block(const IfsFsHostRuntimeV2 *h, uint64_t offset,
     return ifs_fs_host_read_bytes_v2(h, offset, buffer, bytes);
 }
 
+/* Return I/O and allocation failures separately from an invalid root.
+ * A failed block read must not be interpreted as absent/corrupt media when
+ * BOOT decides whether it can safely mount the selected partition. */
 static int root_at(const IfsFsHostRuntimeV2 *h, uint32_t bs, uint32_t number,
-                   IfsSfs2RootRecord *record)
+                   IfsSfs2RootRecord *record, int *valid)
 {
     uint8_t *buffer;
-    int valid;
+    int status;
+    *valid = 0;
     if (bs < MIN_BLOCK || bs > MAX_BLOCK || (bs & (bs - 1u)) ||
         number >= h->volume_bytes / bs)
-        return 0;
+        return IFS_FS_OK;
     buffer = h->allocate(h->context, bs);
     if (!buffer)
-        return 0;
-    valid = read_block(h, (uint64_t)number * bs, buffer, bs) == IFS_FS_OK &&
-        ifs_sfs2_validate_block_header(buffer, bs, number, IFS_SFS2_ROOT_ID) &&
-        ifs_sfs2_decode_root(buffer, bs, record) == 0 &&
-        ifs_sfs2_validate_root_record(record) == 0 &&
-        record->block_size == bs && record->total_blocks >= 4u &&
-        (uint64_t)record->total_blocks * bs <= h->volume_bytes &&
-        record->last_byte < (uint64_t)record->total_blocks * bs;
+        return IFS_FS_NO_MEMORY;
+    status = read_block(h, (uint64_t)number * bs, buffer, bs);
+    if (status == IFS_FS_OK)
+        *valid =
+            ifs_sfs2_validate_block_header(buffer, bs, number, IFS_SFS2_ROOT_ID) &&
+            ifs_sfs2_decode_root(buffer, bs, record) == 0 &&
+            ifs_sfs2_validate_root_record(record) == 0 &&
+            record->block_size == bs && record->total_blocks >= 4u &&
+            (uint64_t)record->total_blocks * bs <= h->volume_bytes &&
+            record->last_byte < (uint64_t)record->total_blocks * bs;
     h->release(h->context, buffer);
-    return valid;
+    return status;
 }
 
 static int inspect(const IfsFsHostRuntimeV2 *h, Sfs2Volume *out)
@@ -82,8 +88,10 @@ static int inspect(const IfsFsHostRuntimeV2 *h, Sfs2Volume *out)
         total = be32(first + 48u);
         if (bs >= MIN_BLOCK && bs <= MAX_BLOCK && !(bs & (bs - 1u)) &&
             total >= 4u && (uint64_t)total * bs <= h->volume_bytes) {
-            pvalid = root_at(h, bs, 0u, &primary);
-            bvalid = root_at(h, bs, total - 1u, &backup);
+            int status = root_at(h, bs, 0u, &primary, &pvalid);
+            if (status != IFS_FS_OK) return status;
+            status = root_at(h, bs, total - 1u, &backup, &bvalid);
+            if (status != IFS_FS_OK) return status;
         }
     }
     h->release(h->context, first);
@@ -94,8 +102,10 @@ static int inspect(const IfsFsHostRuntimeV2 *h, Sfs2Volume *out)
                 h->volume_bytes / bs > UINT32_MAX)
                 continue;
             last = (uint32_t)(h->volume_bytes / bs - 1u);
-            if (root_at(h, bs, last, &backup) &&
-                backup.total_blocks == last + 1u) {
+            int candidate_valid = 0;
+            int status = root_at(h, bs, last, &backup, &candidate_valid);
+            if (status != IFS_FS_OK) return status;
+            if (candidate_valid && backup.total_blocks == last + 1u) {
                 bvalid = 1;
                 break;
             }
