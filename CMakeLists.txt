@@ -55,10 +55,12 @@ add_custom_command(TARGET sfs2-driver POST_BUILD
     VERBATIM)
 if(BUILD_TESTING)
     add_executable(sfs2-module-test tests/test_sfs2_module.c)
-    target_link_libraries(sfs2-module-test PRIVATE sfs2-driver InfiltratrCommon::Common)
+    target_link_libraries(sfs2-module-test PRIVATE sfs2-driver InfiltratrCommon::Common ${CMAKE_DL_LIBS})
     target_compile_definitions(sfs2-module-test PRIVATE _GNU_SOURCE _FILE_OFFSET_BITS=64)
     target_compile_options(sfs2-module-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME sfs2-independent-module COMMAND sfs2-module-test)
+    add_test(NAME sfs2-freestanding-real-namespace
+        COMMAND sfs2-module-test "${SFS2_FIRMWARE_ELF}")
     add_test(NAME sfs2-freestanding-v2-elf
         COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_firmware_v2.sh"
             "$<TARGET_FILE:sfs2-driver>" "${SFS2_FIRMWARE_ELF}")

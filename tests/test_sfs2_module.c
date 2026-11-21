@@ -4,6 +4,7 @@
 #include <infiltratr/filesystem_module_v2.h>
 #include "../native/filesystems/sfs2/core/sfs2_core.h"
 #include <fcntl.h>
+#include <dlfcn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -135,9 +136,26 @@ static void *allocate(void *p,size_t n) { (void)p; return malloc(n); }
 static void release(void *p,void *x) { (void)p; free(x); }
 static int update(int fd,const unsigned char *data)
 { return pwrite(fd,data,NB*BS,0)==NB*BS?0:-1; }
-int main(void)
+int main(int argc,char **argv)
 {
-    const IfsFsModuleApiV2 *api=infiltrator_filesystem_api_v2();
+    const IfsFsModuleApiV2 *api=NULL;
+    void *freestanding=NULL;
+    if (argc==2) {
+        freestanding=dlopen(argv[1],RTLD_NOW|RTLD_LOCAL);
+        CHECK(freestanding!=NULL);
+        void *symbol=dlsym(freestanding,IFS_FS_COMMON_EXPORT_V2);
+        IfsFsModuleApiEntryV2 resolve=NULL;
+        CHECK(symbol && sizeof(resolve)==sizeof(symbol));
+        memcpy(&resolve,&symbol,sizeof(resolve));
+        api=resolve ? resolve() : NULL;
+        CHECK(api!=NULL);
+        CHECK(api->runtime_profiles==
+              (IFS_FS_PROFILE_FIRMWARE|IFS_FS_PROFILE_FREESTANDING));
+    } else {
+        CHECK(argc==1);
+        api=infiltrator_filesystem_api_v2();
+        CHECK(api->runtime_profiles==IFS_FS_PROFILE_HOSTED);
+    }
     const IfsFsCoreOpsV2 *core;
     const IfsFsVolumeOpsV2 *ops;
     IfsFsHostRuntimeV2 host={0};
@@ -299,5 +317,6 @@ int main(void)
     be32(data+(NB-1)*BS+4,checksum(data+(NB-1)*BS));
     CHECK(update(fd,data)==0 && core->probe(&host,&variant)==IFS_FS_CORRUPT);
     CHECK(close(fd)==0 && unlink(path)==0);
+    if(freestanding)CHECK(dlclose(freestanding)==0);
     return 0;
 }
