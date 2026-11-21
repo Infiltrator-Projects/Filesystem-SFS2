@@ -105,19 +105,21 @@ static int transaction_clean(const IfsSfs2Reader *v)
 static int object_name_utf8(const Object *o, char *output, uint32_t capacity,
                             uint32_t *written)
 {
-    uint32_t size=0;
+    uint32_t required=0u,size=0u;
+    if (!o || !output) return IFS_FS_INVALID;
+    /* Validate the complete UTF-8 byte count before copying any bytes.
+     * Returning NO_SPACE must never expose an incomplete directory name. */
+    for (uint32_t i=0u;i<o->name_bytes;++i)
+        required+=o->raw_name[i]<0x80u?1u:2u;
+    if (required>=capacity) return IFS_FS_NO_SPACE;
     for (uint32_t i=0u;i<o->name_bytes;++i) {
         const uint8_t c=o->raw_name[i];
-        uint32_t need=c<0x80u ? 1u : 2u;
-        if (need > capacity || size >= capacity-need)
-            return IFS_FS_NO_SPACE;
-        if (need==1u) output[size++]=(char)c;
+        if (c<0x80u) output[size++]=(char)c;
         else {
             output[size++]=(char)(0xc0u|(c>>6));
             output[size++]=(char)(0x80u|(c&0x3fu));
         }
     }
-    if (size >= capacity) return IFS_FS_NO_SPACE;
     output[size]=0;
     if (written) *written=size;
     return IFS_FS_OK;
