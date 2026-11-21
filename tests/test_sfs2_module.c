@@ -156,7 +156,7 @@ int main(int argc,char **argv)
 {
     const IfsFsModuleApiV2 *api=NULL;
     void *freestanding=NULL;
-    if (argc==2) {
+    if (argc==2 || (argc==3 && strcmp(argv[2],"hosted")==0)) {
         freestanding=dlopen(argv[1],RTLD_NOW|RTLD_LOCAL);
         CHECK(freestanding!=NULL);
         void *symbol=dlsym(freestanding,IFS_FS_COMMON_EXPORT_V2);
@@ -166,7 +166,8 @@ int main(int argc,char **argv)
         api=resolve ? resolve() : NULL;
         CHECK(api!=NULL);
         CHECK(api->runtime_profiles==
-              (IFS_FS_PROFILE_FIRMWARE|IFS_FS_PROFILE_FREESTANDING));
+              (argc==3 ? IFS_FS_PROFILE_HOSTED :
+               (IFS_FS_PROFILE_FIRMWARE|IFS_FS_PROFILE_FREESTANDING)));
     } else {
         CHECK(argc==1);
         api=infiltrator_filesystem_api_v2();
@@ -290,6 +291,20 @@ int main(int argc,char **argv)
         info.structure_bytes=sizeof(info);
         CHECK(core->mount(&host,&volume,&info)==IFS_FS_OK && volume);
         CHECK(core->stat && core->directory_entry && core->read);
+        /* An existing file with an undersized caller buffer must return
+         * NO_SPACE, never INVALID or a partially successful entry. */
+        {
+            char short_name[2] = {0};
+            IfsFsEntryV2 small = {
+                .structure_bytes=sizeof(small),
+                .name=short_name,
+                .name_capacity=sizeof(short_name)
+            };
+            CHECK(core->stat(volume,"/KERNEL.BIN",&small)==IFS_FS_NO_SPACE);
+            CHECK(core->directory_entry(volume,"/",0u,&small)==IFS_FS_NO_SPACE);
+            small.name_capacity=1u;
+            CHECK(core->stat(volume,"/",&small)==IFS_FS_NO_SPACE);
+        }
         CHECK(core->stat(volume,"/",&entry)==IFS_FS_OK &&
               entry.type==IFS_FS_ENTRY_DIRECTORY);
         CHECK(core->stat(volume,"/KERNEL.BIN",&entry)==IFS_FS_OK &&
