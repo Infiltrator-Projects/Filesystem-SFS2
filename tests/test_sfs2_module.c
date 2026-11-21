@@ -80,7 +80,7 @@ static uint32_t object(unsigned char *block,uint32_t off,uint32_t node,
 }
 static void namespace_fixture(unsigned char *disk)
 {
-    const unsigned used[]={6u,7u,8u,9u,11u,12u,13u};
+    const unsigned used[]={6u,7u,8u,9u,11u,12u,10u,13u};
     memset(disk,0,NB*BS);
     root(disk,0u,4u);root(disk,NB-1u,5u);
     for(unsigned i=0u;i<2u;++i) {
@@ -113,10 +113,13 @@ static void namespace_fixture(unsigned char *disk)
     structured(disk,7u,UINT32_C(0x4e444320)); /* NDC */
     p=disk+7u*BS;be32(p+12u,1u);be32(p+16u,1u);
     be32(p+4u,checksum(p));
-    structured(disk,8u,UINT32_C(0x4f424a43)); /* root children */
-    p=disk+8u*BS;be32(p+12u,1u);
-    uint32_t at=object(p,24u,3u,9u,0u,2u*BS,0u,"KERNEL.BIN");
-    object(p,at,4u,0u,11u,0u,128u,"BOOT");
+    structured(disk,8u,UINT32_C(0x4f424a43)); /* root first child container */
+    p=disk+8u*BS;be32(p+12u,1u);be32(p+16u,10u);
+    object(p,24u,3u,9u,0u,2u*BS,0u,"KERNEL.BIN");
+    be32(p+4u,checksum(p));
+    structured(disk,10u,UINT32_C(0x4f424a43)); /* linked second container */
+    p=disk+10u*BS;be32(p+12u,1u);be32(p+20u,8u);
+    object(p,24u,4u,0u,11u,0u,128u,"BOOT");
     be32(p+4u,checksum(p));
     structured(disk,11u,UINT32_C(0x4f424a43)); /* BOOT children */
     p=disk+11u*BS;be32(p+12u,4u);
@@ -199,7 +202,7 @@ int main(int argc,char **argv)
     CHECK(update(fd,data)==0);
     CHECK(core->mount(&host,&volume,&info)==IFS_FS_OK && volume);
     CHECK(info.block_bytes==BS && info.total_bytes==NB*BS &&
-          info.free_bytes==2u*BS);
+          info.free_bytes==1u*BS);
     info.structure_bytes=sizeof(info);
     CHECK(ops->query(volume,&info)==IFS_FS_OK && info.block_bytes==BS);
     {
@@ -297,6 +300,14 @@ int main(int argc,char **argv)
         fail_reads=0;
         CHECK(pread(fd,readback,sizeof(readback),0)==(ssize_t)sizeof(readback));
         CHECK(memcmp(data,readback,sizeof(data))==0); /* strictly read-only */
+        /* A CRC-valid linked-container backlink mismatch is corruption. */
+        be32(data+10u*BS+20u,7u);
+        be32(data+10u*BS+4u,checksum(data+10u*BS));
+        CHECK(update(fd,data)==0);
+        CHECK(core->directory_entry(volume,"/",1u,&entry)==IFS_FS_CORRUPT);
+        be32(data+10u*BS+20u,8u);
+        be32(data+10u*BS+4u,checksum(data+10u*BS));
+        CHECK(update(fd,data)==0);
         data[6u*BS+4u]^=1u; /* checksummed extent tree damage */
         CHECK(update(fd,data)==0);
         CHECK(core->read(volume,"/KERNEL.BIN",0u,bytes,1u)==IFS_FS_CORRUPT);
