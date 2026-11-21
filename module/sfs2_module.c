@@ -89,9 +89,15 @@ static int inspect(const IfsFsHostRuntimeV2 *h, Sfs2Volume *out)
         if (bs >= MIN_BLOCK && bs <= MAX_BLOCK && !(bs & (bs - 1u)) &&
             total >= 4u && (uint64_t)total * bs <= h->volume_bytes) {
             int status = root_at(h, bs, 0u, &primary, &pvalid);
-            if (status != IFS_FS_OK) return status;
+            if (status != IFS_FS_OK) {
+                h->release(h->context, first);
+                return status;
+            }
             status = root_at(h, bs, total - 1u, &backup, &bvalid);
-            if (status != IFS_FS_OK) return status;
+            if (status != IFS_FS_OK) {
+                h->release(h->context, first);
+                return status;
+            }
         }
     }
     h->release(h->context, first);
