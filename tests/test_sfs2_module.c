@@ -330,6 +330,23 @@ int main(int argc,char **argv)
         }
         CHECK(core->stat(volume,"/",&entry)==IFS_FS_OK &&
               entry.type==IFS_FS_ENTRY_DIRECTORY);
+        /* Both Common V2 STAT and LIST refuse insufficient output space
+         * without exposing even a prefix of the native object name. */
+        {
+            char tiny[4]={'X','X','X','X'};
+            const char original_name[4]={'X','X','X','X'};
+            IfsFsEntryV2 short_entry={.structure_bytes=sizeof(short_entry),
+                                      .name=tiny,.name_capacity=sizeof(tiny)};
+            CHECK(core->stat(volume,"/KERNEL.BIN",&short_entry)==IFS_FS_NO_SPACE);
+            CHECK(memcmp(tiny,original_name,sizeof(tiny))==0 &&
+                  short_entry.name_bytes==0u);
+            CHECK(core->directory_entry(volume,"/",0u,&short_entry)==IFS_FS_NO_SPACE);
+            CHECK(memcmp(tiny,original_name,sizeof(tiny))==0 &&
+                  short_entry.name_bytes==0u);
+            short_entry.name_capacity=1u;
+            CHECK(core->stat(volume,"/",&short_entry)==IFS_FS_NO_SPACE);
+            CHECK(tiny[0]=='X' && short_entry.name_bytes==0u);
+        }
         CHECK(core->stat(volume,"/KERNEL.BIN",&entry)==IFS_FS_OK &&
               entry.type==IFS_FS_ENTRY_FILE && entry.size_bytes==2u*BS);
         CHECK(core->stat(volume,"/BOOT/INITRD.IMG",&entry)==IFS_FS_OK &&
