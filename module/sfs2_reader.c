@@ -110,14 +110,14 @@ static int object_name_utf8(const Object *o, char *output, uint32_t capacity,
         const uint8_t c=o->raw_name[i];
         uint32_t need=c<0x80u ? 1u : 2u;
         if (need > capacity || size >= capacity-need)
-            return IFS_FS_INVALID;
+            return IFS_FS_NO_SPACE;
         if (need==1u) output[size++]=(char)c;
         else {
             output[size++]=(char)(0xc0u|(c>>6));
             output[size++]=(char)(0x80u|(c&0x3fu));
         }
     }
-    if (size >= capacity) return IFS_FS_INVALID;
+    if (size >= capacity) return IFS_FS_NO_SPACE;
     output[size]=0;
     if (written) *written=size;
     return IFS_FS_OK;
@@ -283,7 +283,7 @@ static int fill_entry(const Object *object,IfsFsEntryV2 *entry,
         !entry->name || !entry->name_capacity)
         return IFS_FS_INVALID;
     if (root) {
-        if (entry->name_capacity<2u) return IFS_FS_INVALID;
+        if (entry->name_capacity<2u) return IFS_FS_NO_SPACE;
         entry->name[0]='/'; entry->name[1]=0; entry->name_bytes=1u;
     } else {
         int rc=object_name_utf8(object,entry->name,entry->name_capacity,
