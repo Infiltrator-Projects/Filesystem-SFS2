@@ -221,6 +221,17 @@ static int mount(const IfsFsHostRuntimeV2 *h, void **volume,
     rc = count_free_bitmap(&candidate, &candidate.verified_free_blocks);
     if (rc != IFS_FS_OK)
         return rc;
+    IfsSfs2Reader verify={0};
+    size_t n=h->structure_bytes<sizeof(verify.host)?
+             h->structure_bytes:sizeof(verify.host);
+    memcpy(&verify.host,h,n);
+    verify.host.structure_bytes=(uint32_t)n;
+    verify.block_bytes=candidate.block_size;
+    verify.total_blocks=candidate.total_blocks;
+    verify.object_root=candidate.object_root;
+    verify.extent_root=candidate.extent_root;
+    rc=ifs_sfs2_ro_validate(&verify);
+    if(rc!=IFS_FS_OK)return rc;
     volume_info(&candidate, &measured);
     rc=ifs_fs_ro_session_open_v2(&sessions, &measured, volume, info);
     if (rc!=IFS_FS_OK) return rc;

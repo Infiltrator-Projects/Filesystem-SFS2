@@ -194,9 +194,12 @@ int main(int argc,char **argv)
     CHECK(update(fd,data)==0);
     CHECK(core->probe(&host,&variant)==IFS_FS_OK && variant==BS);
     info.structure_bytes=sizeof(info);
+    CHECK(core->mount(&host,&volume,&info)==IFS_FS_CORRUPT && !volume);
+    namespace_fixture(data);
+    CHECK(update(fd,data)==0);
     CHECK(core->mount(&host,&volume,&info)==IFS_FS_OK && volume);
     CHECK(info.block_bytes==BS && info.total_bytes==NB*BS &&
-          info.free_bytes==9u*BS);
+          info.free_bytes==2u*BS);
     info.structure_bytes=sizeof(info);
     CHECK(ops->query(volume,&info)==IFS_FS_OK && info.block_bytes==BS);
     {

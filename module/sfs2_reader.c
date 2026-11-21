@@ -14,6 +14,7 @@
 
 #define OBJC UINT32_C(0x4f424a43)
 #define BNDC UINT32_C(0x424e4443)
+#define HTAB UINT32_C(0x48544142)
 #define TROK UINT32_C(0x54524f4b)
 #define TRFA UINT32_C(0x54524641)
 #define TYPE_DIRECTORY UINT8_C(128)
@@ -364,6 +365,40 @@ static int extent_lookup(const IfsSfs2Reader *v,uint32_t wanted,Extent *out)
 done:
     v->host.release(v->host.context,block);
     return status;
+}
+/* Mount is only successful when the clean transaction marker, root object,
+ * directory container and extent root are genuine on-disk structures.
+ * Root/bitmap signatures alone must never masquerade as a bootable volume. */
+int ifs_sfs2_ro_validate(const IfsSfs2Reader *v)
+{
+    if(!has_geometry(v))return IFS_FS_INVALID;
+    int rc=transaction_clean(v);
+    if(rc!=IFS_FS_OK)return rc;
+    Object root;
+    rc=root_object(v,&root);
+    if(rc!=IFS_FS_OK)return rc;
+    uint8_t *buffer=v->host.allocate(v->host.context,v->block_bytes);
+    if(!buffer)return IFS_FS_NO_MEMORY;
+    if(root.first_extent) {
+        rc=block_read(v,root.first_extent,HTAB,buffer);
+        if(rc!=IFS_FS_OK)goto done;
+    }
+    rc=block_read(v,v->extent_root,BNDC,buffer);
+    if(rc!=IFS_FS_OK)goto done;
+    const uint32_t count=be16(buffer+12u);
+    const uint32_t stride=buffer[14u]?16u:8u;
+    if(buffer[15u]!=stride ||
+       count>(v->block_bytes-BTREE_BLOCK_PREFIX)/stride) {
+        rc=IFS_FS_CORRUPT;goto done;
+    }
+    if(root.child_container) {
+        Object child;
+        rc=directory_find(v,root.child_container,root.node,0u,NULL,0u,&child);
+        if(rc==IFS_FS_END)rc=IFS_FS_OK;
+    }
+done:
+    v->host.release(v->host.context,buffer);
+    return rc;
 }
 /* Verify the complete native extent chain BEFORE copying user data.
  * A valid image must terminate at the right size and preserve prev links. */
