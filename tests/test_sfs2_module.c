@@ -134,9 +134,11 @@ static void namespace_fixture(unsigned char *disk)
 }
 static uint32_t sector_bytes=512u;
 static int fail_reads;
+static uint64_t fail_at=UINT64_MAX;
 static int rd(void *ctx,uint64_t at,void *dest,uint32_t n)
 {
-    if(fail_reads || at%sector_bytes || n%sector_bytes || n>sector_bytes)return -1;
+    if(fail_reads || at==fail_at || at%sector_bytes ||
+       n%sector_bytes || n>sector_bytes)return -1;
     return pread(*(int *)ctx,dest,n,(off_t)at)==(ssize_t)n?0:-1;
 }
 static void *allocate(void *p,size_t n) { (void)p; return malloc(n); }
@@ -200,6 +202,14 @@ int main(int argc,char **argv)
     CHECK(core->mount(&host,&volume,&info)==IFS_FS_CORRUPT && !volume);
     namespace_fixture(data);
     CHECK(update(fd,data)==0);
+    /* A failed read of the otherwise valid backup root must report I/O,
+     * never NOT_FOUND or CORRUPT. Both hosted and freestanding builds
+     * exercise this exact Common V2 PROBE/MOUNT path. */
+    fail_at=(NB-1u)*BS;
+    CHECK(core->probe(&host,&variant)==IFS_FS_IO_ERROR);
+    info.structure_bytes=sizeof(info);
+    CHECK(core->mount(&host,&volume,&info)==IFS_FS_IO_ERROR && !volume);
+    fail_at=UINT64_MAX;
     CHECK(core->mount(&host,&volume,&info)==IFS_FS_OK && volume);
     CHECK(info.block_bytes==BS && info.total_bytes==NB*BS &&
           info.free_bytes==1u*BS);
