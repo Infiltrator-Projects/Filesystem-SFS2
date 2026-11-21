@@ -78,9 +78,11 @@ static int inspect(const IfsFsHostRuntimeV2 *h, Sfs2Volume *out)
     first = h->allocate(h->context, h->logical_sector_bytes);
     if (!first)
         return IFS_FS_NO_MEMORY;
-    if (read_block(h, 0u, first, h->logical_sector_bytes) != IFS_FS_OK) {
+    const int initial_read = read_block(h, 0u, first,
+                                        h->logical_sector_bytes);
+    if (initial_read != IFS_FS_OK) {
         h->release(h->context, first);
-        return IFS_FS_IO_ERROR;
+        return initial_read;
     }
     if (be32(first) == IFS_SFS2_ROOT_ID) {
         saw_root = 1;
