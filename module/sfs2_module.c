@@ -307,9 +307,15 @@ static const IfsFsGroupHeaderV2 *group(
         return &volume.header;
     return NULL;
 }
+__attribute__((used,retain,section(".ifsmeta")))
+static const char identity[]="IFS-MODULE:sfs2:common2";
 static const IfsFsModuleApiV2 api = {
     IFS_FS_COMMON_ABI_V2, sizeof(IfsFsModuleApiV2), "sfs2",
+#if defined(IFS_SFS2_FIRMWARE_BUILD)
+    IFS_FS_PROFILE_FREESTANDING|IFS_FS_PROFILE_FIRMWARE,
+#else
     IFS_FS_PROFILE_HOSTED,
+#endif
     IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE) |
         IFS_FS_GROUP_BIT(IFS_FS_GROUP_VOLUME),
     group

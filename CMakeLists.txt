@@ -12,6 +12,23 @@ set_property(DIRECTORY "${infiltratr_common_SOURCE_DIR}" PROPERTY EXCLUDE_FROM_A
 include(CTest)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+if(NOT CMAKE_OBJCOPY)
+    find_program(CMAKE_OBJCOPY NAMES objcopy llvm-objcopy REQUIRED)
+endif()
+set(SFS2_FIRMWARE_DIR "${CMAKE_CURRENT_BINARY_DIR}/firmware")
+set(SFS2_FIRMWARE_ELF "${SFS2_FIRMWARE_DIR}/SFS2.so")
+add_custom_command(OUTPUT "${SFS2_FIRMWARE_ELF}"
+    COMMAND "${CMAKE_COMMAND}" -S "${CMAKE_CURRENT_SOURCE_DIR}/module/firmware"
+        -B "${SFS2_FIRMWARE_DIR}" -DCMAKE_BUILD_TYPE=Release
+        "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
+        "-DCOMMON_INCLUDE_DIR=${infiltratr_common_SOURCE_DIR}/include"
+    COMMAND "${CMAKE_COMMAND}" --build "${SFS2_FIRMWARE_DIR}" --parallel 2
+    DEPENDS module/firmware/CMakeLists.txt module/firmware/runtime.c
+        module/sfs2_module.c module/sfs2_reader.c module/sfs2_reader.h
+        native/filesystems/sfs2/core/sfs2_core.c
+        native/filesystems/sfs2/core/sfs2_core.h
+    VERBATIM)
+add_custom_target(sfs2-firmware-elf DEPENDS "${SFS2_FIRMWARE_ELF}")
 add_library(sfs2-driver SHARED
     native/filesystems/sfs2/core/sfs2_core.c
     module/sfs2_module.c
@@ -28,12 +45,23 @@ target_compile_options(sfs2-driver PRIVATE -Wall -Wextra -Wpedantic -Werror -fvi
 target_link_options(sfs2-driver PRIVATE -Wl,-z,defs
   "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/module/v2-only.map")
 target_link_libraries(sfs2-driver PRIVATE InfiltratrCommon::Common)
+add_dependencies(sfs2-driver sfs2-firmware-elf)
+set_property(TARGET sfs2-driver APPEND PROPERTY LINK_DEPENDS "${SFS2_FIRMWARE_ELF}")
+add_custom_command(TARGET sfs2-driver POST_BUILD
+    COMMAND "${CMAKE_OBJCOPY}" --add-section
+        ".infiltrator_boot=${SFS2_FIRMWARE_ELF}"
+        --set-section-flags .infiltrator_boot=readonly
+        "$<TARGET_FILE:sfs2-driver>"
+    VERBATIM)
 if(BUILD_TESTING)
     add_executable(sfs2-module-test tests/test_sfs2_module.c)
     target_link_libraries(sfs2-module-test PRIVATE sfs2-driver InfiltratrCommon::Common)
     target_compile_definitions(sfs2-module-test PRIVATE _GNU_SOURCE _FILE_OFFSET_BITS=64)
     target_compile_options(sfs2-module-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME sfs2-independent-module COMMAND sfs2-module-test)
+    add_test(NAME sfs2-freestanding-v2-elf
+        COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_firmware_v2.sh"
+            "$<TARGET_FILE:sfs2-driver>" "${SFS2_FIRMWARE_ELF}")
     add_test(NAME sfs2-production-v2-exports
         COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_v2_exports.sh"
                 "$<TARGET_FILE:sfs2-driver>")
