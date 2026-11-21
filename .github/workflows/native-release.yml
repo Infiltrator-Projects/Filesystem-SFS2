@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Metadata-only Common V2. Firmware release blocked until genuine native
-# SFS2 file traversal/reads, production BOOT validator and OVMF boot pass.
+# Qualify actual packaged hosted and embedded Common V2 file namespaces.
+# BOOT-ready release remains blocked until its unmodified production validator
+# and genuine OVMF kernel/initramfs handoff can be exercised.
 name: Qualify SFS2 hosted V2 DEB and native RUN without kernel substitute
 on:
   push:
@@ -41,6 +42,25 @@ jobs:
           test "$(find "$RUNNER_TEMP/root" -type f | wc -l)" = 2
           bash tests/check_v2_exports.sh "$RUNNER_TEMP/root/System/Filesystems/SFS2.so"
           test "$(find "$RUNNER_TEMP/root" -name '*.ko' | wc -l)" = 0
+      - name: Exercise actual packaged hosted and embedded firmware V2 readers
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/qualification -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+          cmake --build build/qualification --parallel 2
+          ctest --test-dir build/qualification --output-on-failure
+          for module in \
+            "$RUNNER_TEMP/portable/System/Filesystems/SFS2.so" \
+            "$RUNNER_TEMP/root/System/Filesystems/SFS2.so"; do
+            test -s "$module"
+            build/qualification/sfs2-module-test "$module" hosted
+            readelf -SW "$module" | grep -F .infiltrator_boot
+            objcopy --dump-section \
+              ".infiltrator_boot=$RUNNER_TEMP/packaged-sfs2-firmware.so" "$module"
+            build/qualification/sfs2-module-test \
+              "$RUNNER_TEMP/packaged-sfs2-firmware.so"
+          done
+          echo SFS2_BOTH_PACKAGED_V2_NAMESPACE_AND_FIRMWARE_PAYLOAD_PASS
       - uses: actions/upload-artifact@v4
         with:
           name: SFS2-hosted-only-V2-qualification
