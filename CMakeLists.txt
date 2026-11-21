@@ -14,13 +14,15 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 add_library(sfs2-driver SHARED
     native/filesystems/sfs2/core/sfs2_core.c
-    module/sfs2_module.c)
+    module/sfs2_module.c
+    module/sfs2_reader.c)
 set_target_properties(sfs2-driver PROPERTIES PREFIX "" OUTPUT_NAME "SFS2" SUFFIX ".so")
 target_include_directories(sfs2-driver PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
     "$<INSTALL_INTERFACE:include>")
 target_include_directories(sfs2-driver PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/native/filesystems/sfs2/core")
+    "${CMAKE_CURRENT_SOURCE_DIR}/native/filesystems/sfs2/core"
+    "${infiltratr_common_SOURCE_DIR}/include")
 target_compile_definitions(sfs2-driver PRIVATE _GNU_SOURCE _FILE_OFFSET_BITS=64)
 target_compile_options(sfs2-driver PRIVATE -Wall -Wextra -Wpedantic -Werror -fvisibility=hidden)
 target_link_options(sfs2-driver PRIVATE -Wl,-z,defs
