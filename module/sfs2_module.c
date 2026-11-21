@@ -171,9 +171,27 @@ static int count_free_bitmap(const Sfs2Volume *v,uint64_t *verified)
                                            UINT32_C(0x42544d50))) {
             rc=IFS_FS_CORRUPT;break;
         }
-        for(uint64_t bit=0u;bit<count;++bit)
-            free_total+=(raw[IFS_SFS2_BLOCK_HEADER_SIZE+(bit>>3u)] &
-                         (uint8_t)(0x80u>>(bit&7u)))!=0u;
+        /* A correct checksum is not enough: no metadata block required
+         * to identify or read this mounted volume may be free.  Otherwise
+         * an allocator could reuse an active root, bitmap, object container,
+         * transaction marker or extent tree without a corrupt header. */
+        for(uint64_t bit=0u;bit<count;++bit) {
+            const uint64_t number=first+bit;
+            const int free_bit=(raw[IFS_SFS2_BLOCK_HEADER_SIZE+(bit>>3u)] &
+                                (uint8_t)(0x80u>>(bit&7u)))!=0u;
+            if(free_bit &&
+               (number==0u || number==v->total_blocks-1u ||
+                (number>=v->bitmap_base &&
+                 number<(uint64_t)v->bitmap_base+groups) ||
+                number==v->object_root || number==v->extent_root ||
+                (v->object_root<=v->total_blocks-3u &&
+                 number==(uint64_t)v->object_root+2u))) {
+                rc=IFS_FS_CORRUPT;
+                break;
+            }
+            free_total+=(uint64_t)free_bit;
+        }
+        if(rc!=IFS_FS_OK)break;
     }
     h->release(h->context,raw);
     if(rc==IFS_FS_OK)*verified=free_total;

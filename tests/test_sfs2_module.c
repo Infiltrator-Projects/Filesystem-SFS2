@@ -228,6 +228,29 @@ int main(int argc,char **argv)
     info.structure_bytes=sizeof(info);
     CHECK(core->mount(&host,&volume,&info)==IFS_FS_NO_MEMORY && !volume);
     fail_allocation_number=0u;
+    /* Valid BTMP checksums must not conceal allocation of live metadata
+     * as free space. Check both roots, the bitmap, object and extent roots,
+     * and the transaction marker through the actual Common V2 mount. */
+    {
+        const unsigned critical[]={0u,1u,3u,5u,6u,NB-1u};
+        for(unsigned i=0u;i<sizeof(critical)/sizeof(critical[0]);++i) {
+            const unsigned block=critical[i];
+            unsigned char *bit=&data[BS+IFS_SFS2_BLOCK_HEADER_SIZE+
+                                     (block>>3u)];
+            const unsigned char mask=(unsigned char)(0x80u>>(block&7u));
+            CHECK((*bit&mask)==0u);
+            *bit|=mask;
+            be32(data+BS+4u,checksum(data+BS));
+            CHECK(update(fd,data)==0);
+            info.structure_bytes=sizeof(info);
+            CHECK(core->mount(&host,&volume,&info)==IFS_FS_CORRUPT &&
+                  !volume);
+            *bit&=(unsigned char)~mask;
+            be32(data+BS+4u,checksum(data+BS));
+            CHECK(update(fd,data)==0);
+        }
+    }
+    info.structure_bytes=sizeof(info);
     CHECK(core->mount(&host,&volume,&info)==IFS_FS_OK && volume);
     CHECK(info.block_bytes==BS && info.total_bytes==NB*BS &&
           info.free_bytes==1u*BS);

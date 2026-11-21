@@ -1,19 +1,30 @@
-# SFS2 Common V2 migration status — 20 November 2026
+# SFS2 Common V2 migration status — 21 November 2026
 
-SFS2 already implements only Common V2 and uses its format-owned
-`native/filesystems/sfs2/core/` for root, checksum, allocation and
-object-structure validation. The hosted provider's former heap-pointer
-volume handle could be dereferenced after unmount. It now stores validated
-volume metadata in the canonical bounded V2 session registry, refusing
-stale/unmounted handles, supporting concurrent volumes and returning proper
-BUSY when the bounded registry is exhausted. The actual on-disk root and
-bitmap checksum validators remain unchanged.
+The installed SFS2.so has one Common V2 export and uses the source-owned
+`native/filesystems/sfs2/core/` and `module/sfs2_reader.c` for native SFS2
+root, checksum, allocation, namespace, directory and extent decoding.
+The hosted and freestanding build profiles compile the same reader. The
+freestanding ELF is embedded as `.infiltrator_boot` in the installed SO.
 
-**Not BOOT-qualified:** the V2 module still lacks genuine object B-tree and
-extent traversal, Common V2 STAT/LIST/READ, a freestanding firmware ELF,
-production BOOT validation and disposable OVMF kernel/initramfs tests.
-The module must not masquerade as a boot reader.
+## Implemented, subject to qualification
 
-CI packages exactly the hosted SFS2.so and its PDF in portable DEB and native
-RUN. No kernel .ko substitute is included, and no new release is published
-until relevant firmware/read tests pass.
+- Common V2 PROBE, read-only MOUNT/UNMOUNT, STAT, LIST, READ and VOLUME.QUERY.
+- Checked primary/backup roots, bitmap checksums, generation-safe sessions,
+  transaction status, object containers, extent B-tree nodes and extent chains.
+- Reject allocation bitmaps that identify live roots, bitmap blocks, object
+  roots, transaction markers or extent roots as free, even when checksums
+  have been recomputed.
+- Host and freestanding V2 interface tests using disposable on-media images
+  with files, directories, deliberately corrupted metadata, aligned I/O
+  and source nonmutation.
+- One `/System/Filesystems/SFS2.so` plus its PDF in hosted packages;
+  no filesystem-specific kernel module or V1 runtime fallback.
+
+## Not BOOT-qualified or released
+
+Neither compiling the freestanding ELF nor hosted V2 tests prove BOOT
+compatibility. The unmodified production BOOT `validate-module` must accept
+the actual packaged SO, and OVMF must load a real EFI-stub kernel and
+initramfs from a sufficiently large, independently created SFS2 volume.
+Those firmware and release gates are still outstanding. No boot-safe
+release is claimed and no live machine/ESP/NVRAM changes are involved.
