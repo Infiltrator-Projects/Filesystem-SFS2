@@ -80,7 +80,7 @@ static uint32_t object(unsigned char *block,uint32_t off,uint32_t node,
 }
 static void namespace_fixture(unsigned char *disk)
 {
-    const unsigned used[]={6u,7u,8u,9u,11u,12u};
+    const unsigned used[]={6u,7u,8u,9u,11u,12u,13u};
     memset(disk,0,NB*BS);
     root(disk,0u,4u);root(disk,NB-1u,5u);
     for(unsigned i=0u;i<2u;++i) {
@@ -105,31 +105,35 @@ static void namespace_fixture(unsigned char *disk)
     structured(disk,5u,UINT32_C(0x54524f4b)); /* TROK */
     structured(disk,6u,UINT32_C(0x424e4443)); /* extent BNDC leaf */
     p=disk+6u*BS;
-    be16(p+12u,2u);p[14u]=1u;p[15u]=16u;
-    be32(p+16u,9u);be32(p+28u,1u);
+    be16(p+12u,3u);p[14u]=1u;p[15u]=16u;
+    be32(p+16u,9u);be32(p+20u,13u);be32(p+28u,1u);
     be32(p+32u,12u);be32(p+44u,1u);
+    be32(p+48u,13u);be32(p+56u,9u);be32(p+60u,1u);
     be32(p+4u,checksum(p));
     structured(disk,7u,UINT32_C(0x4e444320)); /* NDC */
     p=disk+7u*BS;be32(p+12u,1u);be32(p+16u,1u);
     be32(p+4u,checksum(p));
     structured(disk,8u,UINT32_C(0x4f424a43)); /* root children */
     p=disk+8u*BS;be32(p+12u,1u);
-    uint32_t at=object(p,24u,3u,9u,0u,BS,0u,"KERNEL.BIN");
+    uint32_t at=object(p,24u,3u,9u,0u,2u*BS,0u,"KERNEL.BIN");
     object(p,at,4u,0u,11u,0u,128u,"BOOT");
     be32(p+4u,checksum(p));
     structured(disk,11u,UINT32_C(0x4f424a43)); /* BOOT children */
     p=disk+11u*BS;be32(p+12u,4u);
     object(p,24u,5u,12u,0u,256u,0u,"INITRD.IMG");
     be32(p+4u,checksum(p));
-    for(unsigned i=0u;i<BS;++i)
+    for(unsigned i=0u;i<BS;++i) {
         disk[9u*BS+i]=(unsigned char)(i*31u+7u);
+        disk[13u*BS+i]=(unsigned char)((i+BS)*31u+7u);
+    }
     for(unsigned i=0u;i<256u;++i)
         disk[12u*BS+i]=(unsigned char)(i^0xa5u);
 }
 static uint32_t sector_bytes=512u;
+static int fail_reads;
 static int rd(void *ctx,uint64_t at,void *dest,uint32_t n)
 {
-    if(at%sector_bytes || n%sector_bytes || n>sector_bytes)return -1;
+    if(fail_reads || at%sector_bytes || n%sector_bytes || n>sector_bytes)return -1;
     return pread(*(int *)ctx,dest,n,(off_t)at)==(ssize_t)n?0:-1;
 }
 static void *allocate(void *p,size_t n) { (void)p; return malloc(n); }
@@ -241,7 +245,7 @@ int main(int argc,char **argv)
     sector_bytes=BS;
     {
         unsigned char original[NB*BS],readback[NB*BS]={0};
-        unsigned char bytes[BS]={0};
+        unsigned char bytes[2u*BS]={0};
         char name[256]={0};
         IfsFsEntryV2 entry={0};
         entry.structure_bytes=sizeof(entry);
@@ -256,7 +260,7 @@ int main(int argc,char **argv)
         CHECK(core->stat(volume,"/",&entry)==IFS_FS_OK &&
               entry.type==IFS_FS_ENTRY_DIRECTORY);
         CHECK(core->stat(volume,"/KERNEL.BIN",&entry)==IFS_FS_OK &&
-              entry.type==IFS_FS_ENTRY_FILE && entry.size_bytes==BS);
+              entry.type==IFS_FS_ENTRY_FILE && entry.size_bytes==2u*BS);
         CHECK(core->stat(volume,"/BOOT/INITRD.IMG",&entry)==IFS_FS_OK &&
               entry.size_bytes==256u);
         CHECK(core->stat(volume,"/MISSING",&entry)==IFS_FS_NOT_FOUND);
@@ -276,14 +280,33 @@ int main(int argc,char **argv)
         CHECK(core->read(volume,"/KERNEL.BIN",17u,bytes,79u)==IFS_FS_OK);
         for(unsigned i=0u;i<79u;++i)
             CHECK(bytes[i]==(unsigned char)((i+17u)*31u+7u));
+        /* The kernel file crosses two nonadjacent on-disk extents. */
+        CHECK(core->read(volume,"/KERNEL.BIN",0u,bytes,2u*BS)==IFS_FS_OK);
+        for(unsigned i=0u;i<2u*BS;++i)
+            CHECK(bytes[i]==(unsigned char)(i*31u+7u));
+        CHECK(core->read(volume,"/KERNEL.BIN",500u,bytes,100u)==IFS_FS_OK);
+        for(unsigned i=0u;i<100u;++i)
+            CHECK(bytes[i]==(unsigned char)((i+500u)*31u+7u));
         CHECK(core->read(volume,"/MISSING",0u,bytes,1u)==IFS_FS_NOT_FOUND);
-        CHECK(core->read(volume,"/KERNEL.BIN",BS-1u,bytes,2u)==IFS_FS_INVALID);
+        CHECK(core->read(volume,"/KERNEL.BIN",2u*BS-1u,bytes,2u)==IFS_FS_INVALID);
+        fail_reads=1;
+        CHECK(core->read(volume,"/KERNEL.BIN",0u,bytes,1u)==IFS_FS_IO_ERROR);
+        fail_reads=0;
         CHECK(pread(fd,readback,sizeof(readback),0)==(ssize_t)sizeof(readback));
         CHECK(memcmp(data,readback,sizeof(data))==0); /* strictly read-only */
         data[6u*BS+4u]^=1u; /* checksummed extent tree damage */
         CHECK(update(fd,data)==0);
         CHECK(core->read(volume,"/KERNEL.BIN",0u,bytes,1u)==IFS_FS_CORRUPT);
         data[6u*BS+4u]^=1u;
+        CHECK(update(fd,data)==0);
+        /* A checksummed cycle must fail: checksum validation alone is
+         * insufficient to qualify fragmented file chains. */
+        be32(data+6u*BS+20u,9u);
+        be32(data+6u*BS+4u,checksum(data+6u*BS));
+        CHECK(update(fd,data)==0);
+        CHECK(core->read(volume,"/KERNEL.BIN",0u,bytes,1u)==IFS_FS_CORRUPT);
+        be32(data+6u*BS+20u,13u);
+        be32(data+6u*BS+4u,checksum(data+6u*BS));
         CHECK(update(fd,data)==0);
         be32(data+5u*BS,UINT32_C(0x54524641)); /* pending transaction */
         be32(data+5u*BS+4u,checksum(data+5u*BS));
