@@ -141,7 +141,14 @@ static int rd(void *ctx,uint64_t at,void *dest,uint32_t n)
        n%sector_bytes || n>sector_bytes)return -1;
     return pread(*(int *)ctx,dest,n,(off_t)at)==(ssize_t)n?0:-1;
 }
-static void *allocate(void *p,size_t n) { (void)p; return malloc(n); }
+static unsigned allocation_count, fail_allocation_number;
+static void *allocate(void *p,size_t n)
+{
+    (void)p;
+    if (fail_allocation_number &&
+        ++allocation_count==fail_allocation_number) return NULL;
+    return malloc(n);
+}
 static void release(void *p,void *x) { (void)p; free(x); }
 static int update(int fd,const unsigned char *data)
 { return pwrite(fd,data,NB*BS,0)==NB*BS?0:-1; }
@@ -210,6 +217,16 @@ int main(int argc,char **argv)
     info.structure_bytes=sizeof(info);
     CHECK(core->mount(&host,&volume,&info)==IFS_FS_IO_ERROR && !volume);
     fail_at=UINT64_MAX;
+    /* The first allocation is the initial sector scratch buffer and the
+     * second is the native root scratch buffer. Report a real allocation
+     * failure instead of an absent filesystem; do not leak the first. */
+    allocation_count=0u;
+    fail_allocation_number=2u;
+    CHECK(core->probe(&host,&variant)==IFS_FS_NO_MEMORY);
+    allocation_count=0u;
+    info.structure_bytes=sizeof(info);
+    CHECK(core->mount(&host,&volume,&info)==IFS_FS_NO_MEMORY && !volume);
+    fail_allocation_number=0u;
     CHECK(core->mount(&host,&volume,&info)==IFS_FS_OK && volume);
     CHECK(info.block_bytes==BS && info.total_bytes==NB*BS &&
           info.free_bytes==1u*BS);
