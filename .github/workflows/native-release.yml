@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           installer="$(find dist -maxdepth 1 -name '*.run' -print -quit)"
-          bash "$installer" --profile aggressive --system-package-mode --build-only --output "$RUNNER_TEMP/native"
+          bash "$installer" --profile aggressive --build-only --output "$RUNNER_TEMP/native"
           deb="$(find "$RUNNER_TEMP/native" -maxdepth 1 -name '*.deb' -print -quit)"
           test -s "$deb"
           python3 standalone/check-package.py "$deb" --profile aggressive
