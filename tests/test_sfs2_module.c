@@ -382,6 +382,21 @@ int main(int argc,char **argv)
         fail_reads=0;
         CHECK(pread(fd,readback,sizeof(readback),0)==(ssize_t)sizeof(readback));
         CHECK(memcmp(data,readback,sizeof(data))==0); /* strictly read-only */
+        /* A separately checksummed later container must not provide a
+         * second case-folded pathname identity accepted by V2 STAT/READ. */
+        {
+            unsigned char *later=data+10u*BS;
+            memset(later+24u,0,BS-24u);
+            object(later,24u,4u,0u,11u,0u,128u,"kernel.bin");
+            be32(later+4u,checksum(later));
+            CHECK(update(fd,data)==0);
+            CHECK(core->stat(volume,"/KERNEL.BIN",&entry)==IFS_FS_CORRUPT);
+            CHECK(core->read(volume,"/KERNEL.BIN",0u,bytes,1u)
+                  ==IFS_FS_CORRUPT);
+            memcpy(later,original+10u*BS,BS);
+            CHECK(update(fd,data)==0);
+            CHECK(core->stat(volume,"/BOOT",&entry)==IFS_FS_OK);
+        }
         /* A CRC-valid linked-container backlink mismatch is corruption. */
         be32(data+10u*BS+20u,7u);
         be32(data+10u*BS+4u,checksum(data+10u*BS));
