@@ -180,6 +180,11 @@ static int directory_find(const IfsSfs2Reader *v,uint32_t first,
     uint8_t *buffer=v->host.allocate(v->host.context,v->block_bytes);
     if (!buffer) return IFS_FS_NO_MEMORY;
     uint32_t previous=0u,seen=0u,iterations=0u;
+    /* A pathname component must have exactly one case-folded directory key.
+     * Continue scanning following containers after the first match so a
+     * later duplicate or corrupted container cannot be silently accepted. */
+    Object matched={0};
+    int have_match=0;
     int status=name ? IFS_FS_NOT_FOUND : IFS_FS_END;
     while (first) {
         if (first>=v->total_blocks || ++iterations>v->total_blocks) {
@@ -203,8 +208,14 @@ static int directory_find(const IfsSfs2Reader *v,uint32_t first,
             status=decode_object(buffer+at,v->block_bytes-at,
                                  &object,&consumed);
             if (status!=IFS_FS_OK) break;
-            if ((name && component_equal(&object,name,name_len)) ||
-                (!name && seen++==index)) {
+            if (name && component_equal(&object,name,name_len)) {
+                if (have_match) {
+                    status=IFS_FS_CORRUPT;
+                    break;
+                }
+                matched=object;
+                have_match=1;
+            } else if (!name && seen++==index) {
                 *found=object;
                 status=IFS_FS_OK;
                 goto done;
@@ -221,6 +232,10 @@ static int directory_find(const IfsSfs2Reader *v,uint32_t first,
     }
 done:
     v->host.release(v->host.context,buffer);
+    if (name && have_match && status==IFS_FS_NOT_FOUND) {
+        *found=matched;
+        return IFS_FS_OK;
+    }
     return status;
 }
 static int root_object(const IfsSfs2Reader *v,Object *root)
