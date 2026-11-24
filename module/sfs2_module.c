@@ -553,14 +553,22 @@ static const IfsFsCoreOpsV2 core = {
     .unmount = unmount,
     .stat=stat_path, .directory_entry=list_path, .read=read_path
 };
+/* The same lifetime pin as CORE protects the reader during host I/O. */
+static int v2_label(void *volume,char *out,uint32_t capacity,uint32_t *bytes)
+{
+    if(!bytes)return IFS_FS_INVALID;
+    *bytes=0u;
+    Sfs2Session *session=acquire_reader(volume);
+    return session?finish_reader(session,ifs_sfs2_ro_label(&session->reader,out,capacity,bytes)):IFS_FS_INVALID;
+}
 static const IfsFsVolumeOpsV2 volume = {
     .header = {IFS_FS_GROUP_ABI_V2, sizeof(IfsFsVolumeOpsV2),
-               IFS_FS_GROUP_VOLUME,0u,IFS_FS_VOLUME_QUERY
+               IFS_FS_GROUP_VOLUME,0u,IFS_FS_VOLUME_QUERY|IFS_FS_VOLUME_LABEL_GET
 #if !defined(IFS_SFS2_FIRMWARE_BUILD)
              |IFS_FS_VOLUME_FORMAT
 #endif
     },
-    .query = query
+    .query = query,.label=v2_label
 #if !defined(IFS_SFS2_FIRMWARE_BUILD)
     ,.format=format_volume
 #endif

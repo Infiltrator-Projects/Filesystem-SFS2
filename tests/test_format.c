@@ -71,6 +71,10 @@ int main(int argc,char **argv)
     CHECK(core->mount(&ro,&mount,&info)==IFS_FS_OK && mount);
     CHECK(info.variant==variant && info.total_bytes==m.bytes &&
           info.free_bytes==m.bytes-36u*4096u);
+    char label[32];
+    uint32_t label_bytes=0;
+    CHECK(vol->label && vol->label(mount,label,sizeof(label),&label_bytes)==IFS_FS_OK &&
+          label_bytes==9u && !strcmp(label,"NativeSFS"));
     CHECK(core->stat(mount,"/",&entry)==IFS_FS_OK && entry.type==IFS_FS_ENTRY_DIRECTORY);
     CHECK(core->directory_entry(mount,"/",0u,&entry)==IFS_FS_OK && !strcmp(name,".recycled"));
     CHECK(core->directory_entry(mount,"/",1u,&entry)==IFS_FS_END);

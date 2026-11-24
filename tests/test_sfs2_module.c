@@ -338,6 +338,13 @@ int main(int argc,char **argv)
             small.name_capacity=1u;
             CHECK(core->stat(volume,"/",&small)==IFS_FS_NO_SPACE);
         }
+        char label[32],tiny[2]={'X','X'};
+        uint32_t label_bytes=UINT32_MAX;
+        CHECK(ops->label && !ops->set_label &&
+              ops->label(volume,label,sizeof(label),&label_bytes)==IFS_FS_OK &&
+              label_bytes==6u && !strcmp(label,"VOLUME"));
+        CHECK(ops->label(volume,tiny,sizeof(tiny),&label_bytes)==IFS_FS_NO_SPACE &&
+              !label_bytes && tiny[0]=='X' && tiny[1]=='X');
         CHECK(core->stat(volume,"/",&entry)==IFS_FS_OK &&
               entry.type==IFS_FS_ENTRY_DIRECTORY);
         /* Both Common V2 STAT and LIST refuse insufficient output space

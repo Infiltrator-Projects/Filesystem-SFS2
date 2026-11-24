@@ -315,6 +315,18 @@ static int fill_entry(const Object *object,IfsFsEntryV2 *entry,
     entry->attributes=0u;
     return IFS_FS_OK;
 }
+/* A volume name is the name of the native root object, not the
+ * synthetic "/" returned by namespace stat. Reuse validated traversal
+ * and the bounded Latin-1 to UTF-8 converter used for directory names. */
+int ifs_sfs2_ro_label(const IfsSfs2Reader *v,char *out,uint32_t capacity,uint32_t *bytes)
+{
+    if(!bytes)return IFS_FS_INVALID;
+    *bytes=0u;
+    if(!out || !capacity)return IFS_FS_INVALID;
+    Object root;
+    int rc=resolve(v,"/",&root);
+    return rc==IFS_FS_OK?object_name_utf8(&root,out,capacity,bytes):rc;
+}
 int ifs_sfs2_ro_stat(const IfsSfs2Reader *v,const char *path,
                      IfsFsEntryV2 *entry)
 {

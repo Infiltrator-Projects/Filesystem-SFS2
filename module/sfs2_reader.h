@@ -11,6 +11,7 @@ typedef struct IfsSfs2Reader {
     uint32_t extent_root;
 } IfsSfs2Reader;
 int ifs_sfs2_ro_validate(const IfsSfs2Reader *);
+int ifs_sfs2_ro_label(const IfsSfs2Reader *,char *,uint32_t,uint32_t *);
 int ifs_sfs2_ro_stat(const IfsSfs2Reader *,const char *,IfsFsEntryV2 *);
 int ifs_sfs2_ro_list(const IfsSfs2Reader *,const char *,uint32_t,IfsFsEntryV2 *);
 int ifs_sfs2_ro_read(const IfsSfs2Reader *,const char *,uint64_t,void *,uint32_t);
