@@ -54,7 +54,12 @@ add_custom_command(TARGET sfs2-driver POST_BUILD
         "$<TARGET_FILE:sfs2-driver>"
     VERBATIM)
 if(BUILD_TESTING)
-    add_executable(sfs2-module-test tests/test_sfs2_module.c)
+    add_executable(sfs2-native-format-test tests/test_format.c)
+  target_link_libraries(sfs2-native-format-test PRIVATE InfiltratrCommon::Common ${CMAKE_DL_LIBS})
+  target_compile_options(sfs2-native-format-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  add_test(NAME sfs2-native-format COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/format_media.sh"
+    "$<TARGET_FILE:sfs2-native-format-test>" "$<TARGET_FILE:sfs2-driver>")
+  add_executable(sfs2-module-test tests/test_sfs2_module.c)
     target_link_libraries(sfs2-module-test PRIVATE sfs2-driver InfiltratrCommon::Common ${CMAKE_DL_LIBS})
     target_compile_definitions(sfs2-module-test PRIVATE _GNU_SOURCE _FILE_OFFSET_BITS=64)
     target_compile_options(sfs2-module-test PRIVATE -Wall -Wextra -Wpedantic -Werror)

@@ -197,7 +197,8 @@ int main(int argc,char **argv)
     core=(const IfsFsCoreOpsV2 *)ifs_fs_group_v2(api,IFS_FS_GROUP_CORE);
     ops=(const IfsFsVolumeOpsV2 *)ifs_fs_group_v2(api,IFS_FS_GROUP_VOLUME);
     CHECK(core && ops && core->probe && core->mount && core->unmount && ops->query);
-    CHECK(!core->write && !core->create && !ops->format && !ops->repair);
+    CHECK(!core->write && !core->create && !ops->repair);
+    CHECK((ops->format!=NULL)==(api->runtime_profiles==IFS_FS_PROFILE_HOSTED));
     host.abi_version=IFS_FS_HOST_ABI_V2;
     host.structure_bytes=sizeof(host);
     host.capabilities=IFS_FS_HOST_READ_ONLY;

@@ -7,6 +7,7 @@
 #include "sfs2_core.h"
 #include "sfs2_reader.h"
 #include <stdint.h>
+#include <stdatomic.h>
 #include <limits.h>
 #include <string.h>
 
@@ -59,7 +60,7 @@ static int root_at(const IfsFsHostRuntimeV2 *h, uint32_t bs, uint32_t number,
             ifs_sfs2_validate_root_record(record) == 0 &&
             record->block_size == bs && record->total_blocks >= 4u &&
             (uint64_t)record->total_blocks * bs <= h->volume_bytes &&
-            record->last_byte < (uint64_t)record->total_blocks * bs;
+            record->last_byte <= (uint64_t)record->total_blocks * bs;
     h->release(h->context, buffer);
     return status;
 }
@@ -261,7 +262,7 @@ static int finish_reader(Sfs2Session *session,int rc)
     ifs_fs_ro_sessions_unlock_v2(&sessions);
     return rc;
 }
-static int mount(const IfsFsHostRuntimeV2 *h, void **volume,
+static int mount_impl(const IfsFsHostRuntimeV2 *h, void **volume,
                  IfsFsVolumeInfoV2 *info)
 {
     Sfs2Volume candidate = {0};
@@ -359,6 +360,189 @@ static int read_path(void *volume,const char *path,uint64_t offset,
     return session?finish_reader(session,ifs_sfs2_ro_read(&session->reader,path,offset,out,length)):IFS_FS_INVALID;
 }
 
+#if !defined(IFS_SFS2_FIRMWARE_BUILD)
+/* SmartFilesystem 1.279 empty-volume layout: two roots, a 32-block
+ * administration region, root/recycled objects, hash table, clean
+ * transaction marker, extent and object-node trees, and free bitmaps.
+ * Layout reference: amipart nativefmt.c (retained in Filesystem-SFS2).
+ * This implementation uses the provider's canonical checksum and
+ * Common V2 byte transport; no pathname or external formatter.
+ * The host supplies partition-relative geometry, not disk offsets. */
+enum { FMT_ADMIN=1u, FMT_ROOT=2u, FMT_HASH=3u, FMT_TRANS=4u,
+       FMT_EXTENT=5u, FMT_NODES=6u, FMT_RECYCLED=7u,
+       FMT_ADMIN_COUNT=32u, FMT_BITMAP=33u, FMT_BLOCK=4096u };
+static atomic_flag format_gate=ATOMIC_FLAG_INIT;
+static void fmt16(uint8_t *p,uint32_t x)
+{p[0]=(uint8_t)(x>>8);p[1]=(uint8_t)x;}
+static void fmt32(uint8_t *p,uint32_t x)
+{fmt16(p,x>>16);fmt16(p+2,x);}
+static void fmt64(uint8_t *p,uint64_t x)
+{fmt32(p,(uint32_t)(x>>32));fmt32(p+4,(uint32_t)x);}
+static void fmt_header(uint8_t *p,uint32_t id,uint32_t own)
+{
+    memset(p,0,FMT_BLOCK);
+    fmt32(p,id);fmt32(p+8,own);
+}
+static int fmt_write(const IfsFsHostRuntimeV2 *h,uint32_t own,uint8_t *p,int stamp)
+{
+    if(h->cancelled && h->cancelled(h->context))return IFS_FS_BUSY;
+    if(stamp) {
+        fmt32(p+8,own);
+        fmt32(p+4,ifs_sfs2_calculate_block_checksum(p,FMT_BLOCK));
+    }
+    return ifs_fs_host_write_bytes_v2(h,(uint64_t)own*FMT_BLOCK,p,FMT_BLOCK);
+}
+static uint16_t fmt_hash(const char *name)
+{
+    uint16_t hash=(uint16_t)strlen(name);
+    for(;*name;++name) {
+        unsigned char ch=(unsigned char)*name;
+        if(ch>='a' && ch<='z')ch=(unsigned char)(ch-32);
+        hash=(uint16_t)(hash*13u+ch);
+    }
+    return hash;
+}
+static void fmt_object(uint8_t *p,uint32_t node,uint32_t protection,
+                       uint32_t hash,uint32_t children,uint32_t date,
+                       uint8_t bits,const char *name)
+{
+    fmt32(p+4,node);fmt32(p+8,protection);
+    fmt32(p+12,hash);fmt32(p+16,children);
+    fmt32(p+22,date);p[26]=bits;
+    memcpy(p+27,name,strlen(name)+1u);
+}
+static int format_impl(const IfsFsHostRuntimeV2 *h,const char *label)
+{
+    const uint32_t total=(uint32_t)(h->volume_bytes/FMT_BLOCK);
+    uint32_t bits=0u,maps=0u;
+    if(ifs_sfs2_compute_bitmap_layout(FMT_BLOCK,total,&bits,&maps)!=0 ||
+       !bits || !maps || (uint64_t)FMT_BITMAP+maps+17u>=total)
+        return IFS_FS_UNSUPPORTED;
+    const uint32_t first_free=FMT_BITMAP+maps;
+    const uint32_t free_blocks=total-first_free-1u;
+    uint32_t date=0u;
+    if(h->realtime_ns) {
+        uint64_t t=h->realtime_ns(h->context)/1000000000ull;
+        if(t>=252460800ull && t-252460800ull<=UINT32_MAX)
+            date=(uint32_t)(t-252460800ull);
+    }
+    uint8_t block[FMT_BLOCK]={0};
+    int rc;
+    /* Revoke both old root copies, then persist metadata before publishing
+     * either new identity. Never expose a new root during partial format. */
+    rc=fmt_write(h,0u,block,0);if(rc!=IFS_FS_OK)return rc;
+    rc=fmt_write(h,total-1u,block,0);if(rc!=IFS_FS_OK)return rc;
+    if(h->flush(h->context)!=0)return IFS_FS_IO_ERROR;
+    for(uint32_t i=FMT_ADMIN;i<FMT_BITMAP;++i) {
+        rc=fmt_write(h,i,block,0);if(rc!=IFS_FS_OK)return rc;
+    }
+    fmt_header(block,0x41444d43u,FMT_ADMIN);
+    block[20]=FMT_ADMIN_COUNT;fmt32(block+24,FMT_ADMIN);
+    /* The first seven admin slots are allocated; the remaining 25
+     * belong to the admin allocator, not the general free-space map. */
+    fmt32(block+28,0xfe000000u);
+    rc=fmt_write(h,FMT_ADMIN,block,1);if(rc!=IFS_FS_OK)return rc;
+    fmt_header(block,0x4f424a43u,FMT_ROOT);
+    fmt_object(block+24,1u,15u,FMT_HASH,FMT_RECYCLED,date,128u,label);
+    fmt32(block+FMT_BLOCK-28u,free_blocks);
+    fmt32(block+FMT_BLOCK-24u,date);
+    rc=fmt_write(h,FMT_ROOT,block,1);if(rc!=IFS_FS_OK)return rc;
+    fmt_header(block,0x48544142u,FMT_HASH);
+    fmt32(block+12,1u);
+    const uint16_t hash=fmt_hash(".recycled");
+    fmt32(block+16u+4u*(hash%((FMT_BLOCK-16u)/4u)),2u);
+    rc=fmt_write(h,FMT_HASH,block,1);if(rc!=IFS_FS_OK)return rc;
+    fmt_header(block,0x54524f4bu,FMT_TRANS);
+    rc=fmt_write(h,FMT_TRANS,block,1);if(rc!=IFS_FS_OK)return rc;
+    fmt_header(block,0x424e4443u,FMT_EXTENT);
+    block[14]=1u;block[15]=16u;
+    rc=fmt_write(h,FMT_EXTENT,block,1);if(rc!=IFS_FS_OK)return rc;
+    fmt_header(block,0x4e444320u,FMT_NODES);
+    fmt32(block+12,1u);fmt32(block+16,1u);
+    fmt32(block+20,FMT_ROOT);fmt32(block+30,FMT_RECYCLED);
+    fmt16(block+38,hash);
+    for(uint32_t i=0;i<4u;++i)fmt32(block+40u+10u*i,UINT32_MAX);
+    rc=fmt_write(h,FMT_NODES,block,1);if(rc!=IFS_FS_OK)return rc;
+    fmt_header(block,0x4f424a43u,FMT_RECYCLED);
+    fmt32(block+12,1u);
+    fmt_object(block+24,2u,12u,0u,0u,date,135u,".recycled");
+    rc=fmt_write(h,FMT_RECYCLED,block,1);if(rc!=IFS_FS_OK)return rc;
+    for(uint32_t i=0;i<maps;++i) {
+        fmt_header(block,0x42544d50u,FMT_BITMAP+i);
+        for(uint32_t j=0;j<bits;++j) {
+            uint64_t number=(uint64_t)i*bits+j;
+            if(number>=first_free && number<total-1u)
+                block[12u+j/8u]|=(uint8_t)(0x80u>>(j%8u));
+        }
+        rc=fmt_write(h,FMT_BITMAP+i,block,1);if(rc!=IFS_FS_OK)return rc;
+    }
+    if(h->flush(h->context)!=0)return IFS_FS_IO_ERROR;
+    fmt_header(block,IFS_SFS2_ROOT_ID,total-1u);
+    fmt16(block+12,IFS_SFS2_STRUCTURE_VERSION);
+    fmt32(block+16,date);block[20]=64u;
+    fmt64(block+40,h->volume_bytes);
+    fmt32(block+48,total);fmt32(block+52,FMT_BLOCK);
+    fmt32(block+96,FMT_BITMAP);fmt32(block+100,FMT_ADMIN);
+    fmt32(block+104,FMT_ROOT);fmt32(block+108,FMT_EXTENT);
+    fmt32(block+112,FMT_NODES);
+    rc=fmt_write(h,total-1u,block,1);if(rc!=IFS_FS_OK)return rc;
+    if(h->flush(h->context)!=0)return IFS_FS_IO_ERROR;
+    rc=fmt_write(h,0u,block,1);if(rc!=IFS_FS_OK)return rc;
+    if(h->flush(h->context)!=0) {
+        memset(block,0,sizeof(block));
+        (void)ifs_fs_host_write_bytes_v2(h,0u,block,sizeof(block));
+        (void)ifs_fs_host_write_bytes_v2(h,h->volume_bytes-FMT_BLOCK,block,sizeof(block));
+        (void)h->flush(h->context);return IFS_FS_IO_ERROR;
+    }
+    return IFS_FS_OK;
+}
+static int format_volume(const IfsFsHostRuntimeV2 *h,uint32_t variant,
+                          const char *label,uint32_t flags)
+{
+    if(!ifs_fs_host_v2_valid(h))return IFS_FS_INVALID;
+    if((h->capabilities&IFS_FS_HOST_READ_ONLY) ||
+       !(h->capabilities&IFS_FS_HOST_EXCLUSIVE) ||
+       !(h->capabilities&IFS_FS_HOST_DURABLE))return IFS_FS_ACCESS;
+    if(variant!=FMT_BLOCK || flags ||
+       h->logical_sector_bytes>FMT_BLOCK ||
+       h->volume_bytes%FMT_BLOCK || h->volume_bytes<16ull*1024u*1024u ||
+       h->volume_bytes>16ull*1024u*1024u*1024u)return IFS_FS_UNSUPPORTED;
+    if(!label || !*label)label="Untitled";
+    const size_t n=strlen(label);
+    if(n>30u)return IFS_FS_INVALID;
+    for(size_t i=0;i<n;++i)
+        if((unsigned char)label[i]<32u || (unsigned char)label[i]>126u ||
+           label[i]==':' || label[i]=='/')return IFS_FS_INVALID;
+    if(atomic_flag_test_and_set_explicit(&format_gate,memory_order_acquire))
+        return IFS_FS_BUSY;
+    int rc=IFS_FS_OK;
+    ifs_fs_ro_sessions_lock_v2(&sessions);
+    for(uint32_t i=0;i<IFS_FS_RO_MAX_SESSIONS_V2;++i)
+        if(sessions.slots[i].cookie){rc=IFS_FS_BUSY;break;}
+    ifs_fs_ro_sessions_unlock_v2(&sessions);
+    if(rc==IFS_FS_OK)rc=format_impl(h,label);
+    atomic_flag_clear_explicit(&format_gate,memory_order_release);
+    return rc;
+}
+#endif
+
+/* Serialize mount publication against the hosted exclusive formatter.
+ * Do not hold a registry spinlock while invoking a caller's I/O. */
+static int mount(const IfsFsHostRuntimeV2 *h,void **volume,IfsFsVolumeInfoV2 *info)
+{
+#if !defined(IFS_SFS2_FIRMWARE_BUILD)
+    if(atomic_flag_test_and_set_explicit(&format_gate,memory_order_acquire)) {
+        if(volume)*volume=NULL;
+        return IFS_FS_BUSY;
+    }
+#endif
+    int rc=mount_impl(h,volume,info);
+#if !defined(IFS_SFS2_FIRMWARE_BUILD)
+    atomic_flag_clear_explicit(&format_gate,memory_order_release);
+#endif
+    return rc;
+}
+
 static const IfsFsCoreOpsV2 core = {
     .header = {IFS_FS_GROUP_ABI_V2, sizeof(IfsFsCoreOpsV2),
                IFS_FS_GROUP_CORE, 0u,
@@ -371,8 +555,15 @@ static const IfsFsCoreOpsV2 core = {
 };
 static const IfsFsVolumeOpsV2 volume = {
     .header = {IFS_FS_GROUP_ABI_V2, sizeof(IfsFsVolumeOpsV2),
-               IFS_FS_GROUP_VOLUME, 0u, IFS_FS_VOLUME_QUERY},
+               IFS_FS_GROUP_VOLUME,0u,IFS_FS_VOLUME_QUERY
+#if !defined(IFS_SFS2_FIRMWARE_BUILD)
+             |IFS_FS_VOLUME_FORMAT
+#endif
+    },
     .query = query
+#if !defined(IFS_SFS2_FIRMWARE_BUILD)
+    ,.format=format_volume
+#endif
 };
 static const IfsFsGroupHeaderV2 *group(
     uint32_t id, uint32_t minimum, uint32_t maximum)
