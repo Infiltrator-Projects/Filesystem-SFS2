@@ -134,9 +134,18 @@ static void namespace_fixture(unsigned char *disk)
 }
 static uint32_t sector_bytes=512u;
 static int fail_reads;
+static const IfsFsCoreOpsV2 *unmount_during_read;
+static void *active_volume;
+static int observed_unmount;
 static uint64_t fail_at=UINT64_MAX;
 static int rd(void *ctx,uint64_t at,void *dest,uint32_t n)
 {
+    if (unmount_during_read) {
+        const IfsFsCoreOpsV2 *ops=unmount_during_read;
+        unmount_during_read=NULL;
+        observed_unmount=ops->unmount(active_volume);
+        if (observed_unmount!=IFS_FS_BUSY) return -1;
+    }
     if(fail_reads || at==fail_at || at%sector_bytes ||
        n%sector_bytes || n>sector_bytes)return -1;
     return pread(*(int *)ctx,dest,n,(off_t)at)==(ssize_t)n?0:-1;
@@ -369,7 +378,13 @@ int main(int argc,char **argv)
         for(unsigned i=0u;i<79u;++i)
             CHECK(bytes[i]==(unsigned char)((i+17u)*31u+7u));
         /* The kernel file crosses two nonadjacent on-disk extents. */
+        /* Reentrant host callback: a live read must pin its session
+         * without holding the registry lock during host I/O. */
+        active_volume=volume;
+        unmount_during_read=core;
+        observed_unmount=IFS_FS_INVALID;
         CHECK(core->read(volume,"/KERNEL.BIN",0u,bytes,2u*BS)==IFS_FS_OK);
+        CHECK(!unmount_during_read && observed_unmount==IFS_FS_BUSY);
         for(unsigned i=0u;i<2u*BS;++i)
             CHECK(bytes[i]==(unsigned char)(i*31u+7u));
         CHECK(core->read(volume,"/KERNEL.BIN",500u,bytes,100u)==IFS_FS_OK);

@@ -7,6 +7,7 @@
 #include "sfs2_core.h"
 #include "sfs2_reader.h"
 #include <stdint.h>
+#include <limits.h>
 #include <string.h>
 
 enum { MIN_BLOCK = 512, MAX_BLOCK = 65536 };
@@ -226,17 +227,39 @@ static void volume_info(const Sfs2Volume *v, IfsFsVolumeInfoV2 *info)
 static IfsFsReadOnlySessionsV2 sessions = IFS_FS_RO_SESSIONS_INIT_V2;
 /* Host-owned read-only I/O and native geometry are retained behind
  * Common V2 generation handles, never raw caller pointers. */
-static struct { uintptr_t cookie; IfsSfs2Reader reader; }
-readers[IFS_FS_RO_MAX_SESSIONS_V2];
-static const IfsSfs2Reader *reader_for(void *handle)
+typedef struct {
+    uintptr_t cookie;
+    unsigned active;
+    IfsSfs2Reader reader;
+} Sfs2Session;
+static Sfs2Session readers[IFS_FS_RO_MAX_SESSIONS_V2];
+
+/* Pin the reader before dropping the registry lock. Holding the lock over
+ * host I/O would serialize independent volumes and deadlock a reentrant
+ * callback. The active count prevents teardown until I/O returns. */
+static Sfs2Session *acquire_reader(void *handle)
 {
     const uintptr_t token=(uintptr_t)handle;
+    Sfs2Session *result=NULL;
     if (!token) return NULL;
+    ifs_fs_ro_sessions_lock_v2(&sessions);
     for (uint32_t i=0;i<IFS_FS_RO_MAX_SESSIONS_V2;++i)
         if (readers[i].cookie==token &&
-            sessions.slots[i].cookie==token)
-            return &readers[i].reader;
-    return NULL;
+            sessions.slots[i].cookie==token &&
+            readers[i].active!=UINT_MAX) {
+            ++readers[i].active;
+            result=&readers[i];
+            break;
+        }
+    ifs_fs_ro_sessions_unlock_v2(&sessions);
+    return result;
+}
+static int finish_reader(Sfs2Session *session,int rc)
+{
+    ifs_fs_ro_sessions_lock_v2(&sessions);
+    --session->active;
+    ifs_fs_ro_sessions_unlock_v2(&sessions);
+    return rc;
 }
 static int mount(const IfsFsHostRuntimeV2 *h, void **volume,
                  IfsFsVolumeInfoV2 *info)
@@ -269,11 +292,12 @@ static int mount(const IfsFsHostRuntimeV2 *h, void **volume,
     rc=ifs_sfs2_ro_validate(&verify);
     if(rc!=IFS_FS_OK)return rc;
     volume_info(&candidate, &measured);
-    rc=ifs_fs_ro_session_open_v2(&sessions, &measured, volume, info);
+    void *token=NULL;
+    rc=ifs_fs_ro_session_open_v2(&sessions, &measured, &token, info);
     if (rc!=IFS_FS_OK) return rc;
     ifs_fs_ro_sessions_lock_v2(&sessions);
     for (uint32_t i=0;i<IFS_FS_RO_MAX_SESSIONS_V2;++i) {
-        if (sessions.slots[i].cookie==(uintptr_t)*volume) {
+        if (sessions.slots[i].cookie==(uintptr_t)token) {
             IfsSfs2Reader *reader=&readers[i].reader;
             size_t n=h->structure_bytes<sizeof(reader->host)?
                      h->structure_bytes:sizeof(reader->host);
@@ -284,26 +308,34 @@ static int mount(const IfsFsHostRuntimeV2 *h, void **volume,
             reader->total_blocks=candidate.total_blocks;
             reader->object_root=candidate.object_root;
             reader->extent_root=candidate.extent_root;
-            readers[i].cookie=(uintptr_t)*volume;
+            readers[i].cookie=(uintptr_t)token;
+            *volume=token;
             break;
         }
     }
     ifs_fs_ro_sessions_unlock_v2(&sessions);
-    return IFS_FS_OK;
+    return *volume ? IFS_FS_OK : IFS_FS_INVALID;
 }
 static int unmount(void *volume)
 {
-    int rc=ifs_fs_ro_session_close_v2(&sessions,volume);
-    if (rc!=IFS_FS_OK)return rc;
+    if (!volume) return IFS_FS_INVALID;
+    int rc=IFS_FS_INVALID;
     ifs_fs_ro_sessions_lock_v2(&sessions);
-    for (uint32_t i=0;i<IFS_FS_RO_MAX_SESSIONS_V2;++i)
-        if (readers[i].cookie==(uintptr_t)volume) {
-            readers[i].cookie=0u;
-            memset(&readers[i].reader,0,sizeof(readers[i].reader));
+    for(uint32_t i=0u;i<IFS_FS_RO_MAX_SESSIONS_V2;++i)
+        if(readers[i].cookie==(uintptr_t)volume &&
+           sessions.slots[i].cookie==(uintptr_t)volume) {
+            if (readers[i].active) rc=IFS_FS_BUSY;
+            else {
+                /* Retire both records atomically; slot reuse cannot race
+                 * cleanup of a previous generation's reader. */
+                sessions.slots[i]=(IfsFsReadOnlySessionSlotV2){0};
+                readers[i]=(Sfs2Session){0};
+                rc=IFS_FS_OK;
+            }
             break;
         }
     ifs_fs_ro_sessions_unlock_v2(&sessions);
-    return IFS_FS_OK;
+    return rc;
 }
 static int query(void *volume, IfsFsVolumeInfoV2 *info)
 {
@@ -311,20 +343,20 @@ static int query(void *volume, IfsFsVolumeInfoV2 *info)
 }
 static int stat_path(void *volume,const char *path,IfsFsEntryV2 *entry)
 {
-    const IfsSfs2Reader *reader=reader_for(volume);
-    return reader?ifs_sfs2_ro_stat(reader,path,entry):IFS_FS_INVALID;
+    Sfs2Session *session=acquire_reader(volume);
+    return session?finish_reader(session,ifs_sfs2_ro_stat(&session->reader,path,entry)):IFS_FS_INVALID;
 }
 static int list_path(void *volume,const char *path,uint32_t index,
                      IfsFsEntryV2 *entry)
 {
-    const IfsSfs2Reader *reader=reader_for(volume);
-    return reader?ifs_sfs2_ro_list(reader,path,index,entry):IFS_FS_INVALID;
+    Sfs2Session *session=acquire_reader(volume);
+    return session?finish_reader(session,ifs_sfs2_ro_list(&session->reader,path,index,entry)):IFS_FS_INVALID;
 }
 static int read_path(void *volume,const char *path,uint64_t offset,
                      void *out,uint32_t length)
 {
-    const IfsSfs2Reader *reader=reader_for(volume);
-    return reader?ifs_sfs2_ro_read(reader,path,offset,out,length):IFS_FS_INVALID;
+    Sfs2Session *session=acquire_reader(volume);
+    return session?finish_reader(session,ifs_sfs2_ro_read(&session->reader,path,offset,out,length)):IFS_FS_INVALID;
 }
 
 static const IfsFsCoreOpsV2 core = {
