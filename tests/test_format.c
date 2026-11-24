@@ -70,7 +70,7 @@ int main(int argc,char **argv)
     CHECK(core->probe(&ro,&detected)==IFS_FS_OK && detected==variant);
     CHECK(core->mount(&ro,&mount,&info)==IFS_FS_OK && mount);
     CHECK(info.variant==variant && info.total_bytes==m.bytes &&
-          info.free_bytes==m.bytes-35u*4096u);
+          info.free_bytes==m.bytes-36u*4096u);
     CHECK(core->stat(mount,"/",&entry)==IFS_FS_OK && entry.type==IFS_FS_ENTRY_DIRECTORY);
     CHECK(core->directory_entry(mount,"/",0u,&entry)==IFS_FS_OK && !strcmp(name,".recycled"));
     CHECK(core->directory_entry(mount,"/",1u,&entry)==IFS_FS_END);

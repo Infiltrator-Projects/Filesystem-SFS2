@@ -54,6 +54,7 @@ jobs:
             "$RUNNER_TEMP/root/System/Filesystems/SFS2.so"; do
             test -s "$module"
             build/qualification/sfs2-module-test "$module" hosted
+            sh tests/format_media.sh build/qualification/sfs2-native-format-test "$module"
             readelf -SW "$module" | grep -F .infiltrator_boot
             objcopy --dump-section \
               ".infiltrator_boot=$RUNNER_TEMP/packaged-sfs2-firmware.so" "$module"
