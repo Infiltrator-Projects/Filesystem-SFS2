@@ -198,6 +198,10 @@ int main(int argc,char **argv)
     ops=(const IfsFsVolumeOpsV2 *)ifs_fs_group_v2(api,IFS_FS_GROUP_VOLUME);
     CHECK(core && ops && core->probe && core->mount && core->unmount && ops->query);
     CHECK(!core->write && !core->create && !ops->repair);
+    const IfsFsDefragOpsV2 *map=(const void *)ifs_fs_group_v2(api,IFS_FS_GROUP_DEFRAG);
+    if(api->runtime_profiles==IFS_FS_PROFILE_HOSTED)
+        CHECK(map && map->header.capabilities==IFS_FS_DEFRAG_MAP && map->map);
+    else CHECK(!map);
     CHECK((ops->format!=NULL)==(api->runtime_profiles==IFS_FS_PROFILE_HOSTED));
     host.abi_version=IFS_FS_HOST_ABI_V2;
     host.structure_bytes=sizeof(host);
@@ -385,6 +389,23 @@ int main(int argc,char **argv)
         CHECK(core->read(volume,"/KERNEL.BIN",17u,bytes,79u)==IFS_FS_OK);
         for(unsigned i=0u;i<79u;++i)
             CHECK(bytes[i]==(unsigned char)((i+17u)*31u+7u));
+        /* The independently constructed native fixture contains two
+         * nonadjacent kernel extents and a shorter one-block initrd. */
+        if(map) {
+            IfsFsExtentV2 e={0};
+            uint32_t n=99u;
+            CHECK(map->map(volume,"/KERNEL.BIN",0u,&e,1u,&n)==IFS_FS_OK &&
+                  n==1u && e.logical_offset==0u && e.physical_offset==9u*BS &&
+                  e.length==BS && !e.flags && !e.reserved);
+            CHECK(map->map(volume,"/KERNEL.BIN",1u,&e,1u,&n)==IFS_FS_OK &&
+                  n==1u && e.logical_offset==BS && e.physical_offset==13u*BS &&
+                  e.length==BS);
+            CHECK(map->map(volume,"/KERNEL.BIN",2u,&e,1u,&n)==IFS_FS_END && n==0u);
+            CHECK(map->map(volume,"/BOOT/INITRD.IMG",0u,&e,1u,&n)==IFS_FS_OK &&
+                  n==1u && e.logical_offset==0u && e.physical_offset==12u*BS &&
+                  e.length==256u);
+            CHECK(map->map(volume,"/MISSING",0u,&e,1u,&n)==IFS_FS_NOT_FOUND && n==0u);
+        }
         /* The kernel file crosses two nonadjacent on-disk extents. */
         /* Reentrant host callback: a live read must pin its session
          * without holding the registry lock during host I/O. */

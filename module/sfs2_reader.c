@@ -461,6 +461,58 @@ static int check_file_extents(const IfsSfs2Reader *v,
     }
     return IFS_FS_CORRUPT;
 }
+/* Expose only verified native allocation chains. The complete chain is
+ * checked before pagination; no external host filesystem or inferred
+ * contiguous allocation is used. Clip the final extent to the file EOF. */
+int ifs_sfs2_ro_map(const IfsSfs2Reader *v,const char *path,uint64_t first,
+                     IfsFsExtentV2 *out,uint32_t capacity,uint32_t *written)
+{
+    if(!written)return IFS_FS_INVALID;
+    *written=0u;
+    if(!v || !out || !capacity)return IFS_FS_INVALID;
+    Object file;
+    int rc=resolve(v,path,&file);
+    if(rc!=IFS_FS_OK)return rc;
+    if(file.bits&(TYPE_DIRECTORY|TYPE_LINK|TYPE_HARDLINK))
+        return IFS_FS_UNSUPPORTED;
+    uint64_t blocks=0u;
+    rc=check_file_extents(v,&file,&blocks);
+    if(rc!=IFS_FS_OK)return rc;
+    if(!file.length)return IFS_FS_END;
+    uint64_t logical=0u,index=0u;
+    uint32_t key=file.first_extent,prev=0u,count=0u;
+    /* The chain's physical ranges must not intersect, even when only a
+     * single output extent was requested. Walk the earlier links for each
+     * range; this avoids a volume-sized allocation inside the provider. */
+    while(key) {
+        if(index>=blocks)return IFS_FS_CORRUPT;
+        Extent e;
+        rc=extent_lookup(v,key,&e);
+        if(rc!=IFS_FS_OK)return rc;
+        if(e.prev!=prev || logical>=file.length)return IFS_FS_CORRUPT;
+        uint32_t prior=file.first_extent;
+        for(uint64_t i=0u;i<index;++i) {
+            Extent old;
+            rc=extent_lookup(v,prior,&old);
+            if(rc!=IFS_FS_OK)return rc;
+            if((uint64_t)e.key<(uint64_t)old.key+old.blocks &&
+               (uint64_t)old.key<(uint64_t)e.key+e.blocks)
+                return IFS_FS_CORRUPT;
+            prior=old.next;
+        }
+        if(prior!=key)return IFS_FS_CORRUPT;
+        uint64_t length=(uint64_t)e.blocks*v->block_bytes;
+        if(length>file.length-logical)length=file.length-logical;
+        if(index>=first && count<capacity)
+            out[count++]=(IfsFsExtentV2){.logical_offset=logical,
+                .physical_offset=(uint64_t)e.key*v->block_bytes,.length=length};
+        logical+=length;prev=e.key;key=e.next;++index;
+    }
+    if(logical!=file.length)return IFS_FS_CORRUPT;
+    *written=count;
+    return count?IFS_FS_OK:IFS_FS_END;
+}
+
 int ifs_sfs2_ro_read(const IfsSfs2Reader *v,const char *path,
                      uint64_t offset,void *output,uint32_t bytes)
 {

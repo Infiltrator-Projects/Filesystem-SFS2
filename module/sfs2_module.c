@@ -548,6 +548,23 @@ static int mount(const IfsFsHostRuntimeV2 *h,void **volume,IfsFsVolumeInfoV2 *in
     return rc;
 }
 
+#if !defined(IFS_SFS2_FIRMWARE_BUILD)
+/* Hosted extent inspection pins the same native reader as CORE.READ. */
+static int map_path(void *volume,const char *path,uint64_t first,
+                    IfsFsExtentV2 *out,uint32_t capacity,uint32_t *written)
+{
+    if(!written)return IFS_FS_INVALID;
+    *written=0u;
+    Sfs2Session *session=acquire_reader(volume);
+    return session?finish_reader(session,ifs_sfs2_ro_map(&session->reader,path,
+                       first,out,capacity,written)):IFS_FS_INVALID;
+}
+static const IfsFsDefragOpsV2 defrag_ops={
+    .header={IFS_FS_GROUP_ABI_V2,sizeof(defrag_ops),IFS_FS_GROUP_DEFRAG,0u,
+             IFS_FS_DEFRAG_MAP},
+    .map=map_path
+};
+#endif
 static const IfsFsCoreOpsV2 core = {
     .header = {IFS_FS_GROUP_ABI_V2, sizeof(IfsFsCoreOpsV2),
                IFS_FS_GROUP_CORE, 0u,
@@ -588,6 +605,9 @@ static const IfsFsGroupHeaderV2 *group(
         return &core.header;
     if (id == IFS_FS_GROUP_VOLUME)
         return &volume.header;
+#if !defined(IFS_SFS2_FIRMWARE_BUILD)
+    if(id==IFS_FS_GROUP_DEFRAG)return &defrag_ops.header;
+#endif
     return NULL;
 }
 __attribute__((used,retain,section(".ifsmeta")))
@@ -600,7 +620,11 @@ static const IfsFsModuleApiV2 api = {
     IFS_FS_PROFILE_HOSTED,
 #endif
     IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE) |
-        IFS_FS_GROUP_BIT(IFS_FS_GROUP_VOLUME),
+        IFS_FS_GROUP_BIT(IFS_FS_GROUP_VOLUME)
+#if !defined(IFS_SFS2_FIRMWARE_BUILD)
+        |IFS_FS_GROUP_BIT(IFS_FS_GROUP_DEFRAG)
+#endif
+        ,
     group
 };
 __attribute__((visibility("default")))
