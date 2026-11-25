@@ -242,7 +242,7 @@ int main(int argc,char **argv)
      * as free space. Check both roots, the bitmap, object and extent roots,
      * and the transaction marker through the actual Common V2 mount. */
     {
-        const unsigned critical[]={0u,1u,3u,5u,6u,NB-1u};
+        const unsigned critical[]={0u,1u,2u,3u,5u,6u,7u,NB-1u};
         for(unsigned i=0u;i<sizeof(critical)/sizeof(critical[0]);++i) {
             const unsigned block=critical[i];
             unsigned char *bit=&data[BS+IFS_SFS2_BLOCK_HEADER_SIZE+
@@ -472,6 +472,12 @@ int main(int argc,char **argv)
     bitmap(data);
     be32(data+(NB-1)*BS+96,6u);
     be32(data+(NB-1)*BS+4,checksum(data+(NB-1)*BS));
+    CHECK(update(fd,data)==0 && core->probe(&host,&variant)==IFS_FS_CORRUPT);
+    /* A checksummed secondary root may not silently redirect the admin
+     * allocator to another block while the primary remains valid. */
+    root(data,0u,4u);root(data,NB-1u,5u);
+    be32(data+(NB-1)*BS+100u,6u);
+    be32(data+(NB-1)*BS+4u,checksum(data+(NB-1)*BS));
     CHECK(update(fd,data)==0 && core->probe(&host,&variant)==IFS_FS_CORRUPT);
     CHECK(close(fd)==0 && unlink(path)==0);
     if(freestanding)CHECK(dlclose(freestanding)==0);

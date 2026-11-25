@@ -16,7 +16,7 @@ enum { MIN_BLOCK = 512, MAX_BLOCK = 65536 };
 typedef struct {
     const IfsFsHostRuntimeV2 *host;
     uint32_t block_size, total_blocks, bitmap_base;
-    uint32_t object_root, extent_root;
+    uint32_t object_root, extent_root, admin_root, node_root;
     uint64_t verified_free_blocks;
     uint16_t root_sequence;
     uint8_t primary_valid, backup_valid;
@@ -60,7 +60,8 @@ static int root_at(const IfsFsHostRuntimeV2 *h, uint32_t bs, uint32_t number,
             ifs_sfs2_validate_root_record(record) == 0 &&
             record->block_size == bs && record->total_blocks >= 4u &&
             (uint64_t)record->total_blocks * bs <= h->volume_bytes &&
-            record->last_byte <= (uint64_t)record->total_blocks * bs;
+            record->last_byte <= (uint64_t)record->total_blocks * bs &&
+            (number == 0u || number == record->total_blocks - 1u);
     h->release(h->context, buffer);
     return status;
 }
@@ -108,7 +109,7 @@ static int inspect(const IfsFsHostRuntimeV2 *h, Sfs2Volume *out)
     if (!pvalid && !bvalid) {
         for (bs = MIN_BLOCK; bs <= MAX_BLOCK; bs <<= 1u) {
             uint32_t last;
-            if (h->volume_bytes % bs ||
+            if (h->volume_bytes % bs || h->volume_bytes / bs < 4u ||
                 h->volume_bytes / bs > UINT32_MAX)
                 continue;
             last = (uint32_t)(h->volume_bytes / bs - 1u);
@@ -129,6 +130,7 @@ static int inspect(const IfsFsHostRuntimeV2 *h, Sfs2Volume *out)
          primary.first_byte != backup.first_byte ||
          primary.last_byte != backup.last_byte ||
          primary.bitmap_base != backup.bitmap_base ||
+         primary.adminspace_container != backup.adminspace_container ||
          primary.root_object_container != backup.root_object_container ||
          primary.extent_bnode_root != backup.extent_bnode_root ||
          primary.object_node_root != backup.object_node_root))
@@ -141,6 +143,8 @@ static int inspect(const IfsFsHostRuntimeV2 *h, Sfs2Volume *out)
     out->bitmap_base = selected->bitmap_base;
     out->object_root = selected->root_object_container;
     out->extent_root = selected->extent_bnode_root;
+    out->admin_root = selected->adminspace_container;
+    out->node_root = selected->object_node_root;
     out->root_sequence = selected->sequence;
     out->primary_valid = (uint8_t)pvalid;
     out->backup_valid = (uint8_t)bvalid;
@@ -186,6 +190,7 @@ static int count_free_bitmap(const Sfs2Volume *v,uint64_t *verified)
                 (number>=v->bitmap_base &&
                  number<(uint64_t)v->bitmap_base+groups) ||
                 number==v->object_root || number==v->extent_root ||
+                number==v->admin_root || number==v->node_root ||
                 (v->object_root<=v->total_blocks-3u &&
                  number==(uint64_t)v->object_root+2u))) {
                 rc=IFS_FS_CORRUPT;
