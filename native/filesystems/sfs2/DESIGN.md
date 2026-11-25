@@ -1,5 +1,15 @@
 # Amiga SFS2 Filesystem Design
 
+## Current production architecture
+
+The current provider declares probe, mount, stat, directory enumeration, file read and format. These supersede the original probe-only description; consult the advertised operation masks for availability in each profile. The canonical entry point is `infiltrator_filesystem_api_v2`. Consumers must negotiate the actual profile and operation masks and use bounded, partition-relative host I/O. A source-level callback does not by itself establish that every format variant or host profile is qualified.
+
+The canonical package installs one Common V2 shared object and its technical PDF. The native RUN downloads and verifies the exact source revision. No independent filesystem-specific kernel or EFI driver or FUSE substitute is distributed. See the [current provider README](../../../README.md) for current scope and the linked qualification evidence.
+
+## Historical source and qualification record
+
+> The following material preserves inherited design, original-format semantics, source attribution and earlier qualification evidence. Earlier implementation status, separate driver layouts, packaging instructions and ABI statements are historical, not the present release contract. No new test result is claimed by this record.
+
 ## Purpose
 
 SFS2 is maintained as a distinct filesystem, not an SFS compatibility switch. It preserves the general structured-block/tree approach of SFS while changing root identity, structure version and several record sizes/capabilities.
