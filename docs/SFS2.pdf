@@ -1,5 +1,4 @@
 %PDF-1.4
-%‚„œ”
 1 0 obj
 << /Type /Catalog /Pages 2 0 R >>
 endobj
@@ -207,7 +206,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents 21 0 R >>
 endobj
 21 0 obj
-<< /Length 2239 >>
+<< /Length 2223 >>
 stream
 0.05 0.13 0.22 rg 0 749 595 93 re f
 0.04 0.54 0.60 rg 50 747 115 4 re f
@@ -227,7 +226,7 @@ BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 535.0 Tm (2. SmartFileSystem histori
 BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 505.0 Tm (https://os4depot.net/?file=driver%2Ffilesystem%2Fsfs.lha&function=showcontent) Tj ET
 BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 475.0 Tm (3. Amiga SmartFileSystem background reference) Tj ET
 BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 445.0 Tm (https://wiki.amiga.org/index.php?title=SmartFileSystem) Tj ET
-BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 415.0 Tm (Our independent .so, optional .ko, build procedures and test evidence describe a separate) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 415.0 Tm (Our Common V2 .so, build procedures and test evidence describe a separate) Tj ET
 BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 398.0 Tm (implementation. The source-level history in this PDF cannot itself qualify production) Tj ET
 BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 381.0 Tm (writes, boot, recovery or cross-platform compatibility.) Tj ET
 endstream
@@ -370,37 +369,37 @@ endobj
 xref
 0 30
 0000000000 65535 f 
-0000000015 00000 n 
-0000000064 00000 n 
-0000000198 00000 n 
-0000000268 00000 n 
-0000000343 00000 n 
-0000000411 00000 n 
-0000000557 00000 n 
-0000003345 00000 n 
-0000003491 00000 n 
-0000005447 00000 n 
-0000005595 00000 n 
-0000007450 00000 n 
-0000007598 00000 n 
-0000009485 00000 n 
-0000009633 00000 n 
-0000011502 00000 n 
-0000011650 00000 n 
-0000013318 00000 n 
-0000013466 00000 n 
-0000014920 00000 n 
-0000015068 00000 n 
-0000017359 00000 n 
-0000017507 00000 n 
-0000020220 00000 n 
-0000020368 00000 n 
-0000023013 00000 n 
-0000023161 00000 n 
-0000025471 00000 n 
-0000025619 00000 n 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000192 00000 n 
+0000000262 00000 n 
+0000000337 00000 n 
+0000000405 00000 n 
+0000000551 00000 n 
+0000003339 00000 n 
+0000003485 00000 n 
+0000005441 00000 n 
+0000005589 00000 n 
+0000007444 00000 n 
+0000007592 00000 n 
+0000009479 00000 n 
+0000009627 00000 n 
+0000011496 00000 n 
+0000011644 00000 n 
+0000013312 00000 n 
+0000013460 00000 n 
+0000014914 00000 n 
+0000015062 00000 n 
+0000017337 00000 n 
+0000017485 00000 n 
+0000020198 00000 n 
+0000020346 00000 n 
+0000022991 00000 n 
+0000023139 00000 n 
+0000025449 00000 n 
+0000025597 00000 n 
 trailer
 << /Size 30 /Root 1 0 R >>
 startxref
-29206
+29184
 %%EOF
