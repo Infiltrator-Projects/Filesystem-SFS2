@@ -208,3 +208,60 @@ BT /F1 10 Tf 0.09 0.16 0.24 rg 1 0 0 1 55 420 Tm (7. Unknown optional features a
 BT /F1 10 Tf 0.09 0.16 0.24 rg 1 0 0 1 55 403.5 Tm (instead of silently normalised or reformatted.) Tj ET
 BT /F1 10 Tf 0.09 0.16 0.24 rg 1 0 0 1 55 377 Tm (8. Keep adapter-specific tests, release claims and Linux kernel compatibility distinct) Tj ET
 BT /F1 10 Tf 0.09 0.16 0.24 rg 1 0 0 1 55 360.5 Tm (from the original format's historical technical reference.) Tj ET
+%%Page
+0.05 0.13 0.22 rg 0 749 595 93 re f
+0.04 0.54 0.60 rg 50 747 115 4 re f
+0.78 0.82 0.86 RG 0.6 w 50 50 m 545 50 l S
+BT /F2 9 Tf 0.62 0.86 0.90 rg 1 0 0 1 50 801 Tm (INFILTRATOR / IMPLEMENTATION REFERENCE) Tj ET
+BT /F2 19 Tf 1 1 1 rg 1 0 0 1 50 771 Tm (SFS2 / Common V2 provider) Tj ET
+BT /F1 8 Tf 0.34 0.40 0.44 rg 1 0 0 1 50 34 Tm (Implementation appendix / source revision 9cb5e7645a56) Tj ET
+BT /F1 8 Tf 0.34 0.40 0.44 rg 1 0 0 1 505 34 Tm (PAGE 11) Tj ET
+BT /F2 13 Tf 0.02 0.45 0.50 rg 1 0 0 1 50 710 Tm (1. PURPOSE AND FORMAT SCOPE) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 686 Tm (SmartFilesystem SFS2 \(SFS\\\\2\), not SFS0. This repository owns the) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 671 Tm (format-specific implementation of SFS2.so for InfiltratorOS.) Tj ET
+BT /F2 13 Tf 0.02 0.45 0.50 rg 1 0 0 1 50 641 Tm (2. ON-DISK ARCHITECTURE AND INVARIANTS) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 617 Tm (Native SFS2 allocation roots and redundant geometry must agree; reject) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 602 Tm (inconsistent allocation roots before trusting the volume. The SFS2 reader) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 587 Tm (and core remain format-specific.) Tj ET
+BT /F2 13 Tf 0.02 0.45 0.50 rg 1 0 0 1 50 557 Tm (3. COMMON V2 IMPLEMENTATION AND CAPABILITIES) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 533 Tm (The current provider declares probe, mount, stat, directory enumeration,) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 518 Tm (file read and format. These supersede the original probe-only description;) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 503 Tm (consult the advertised operation masks for availability in each profile.) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 488 Tm (The canonical entry point is infiltrator_filesystem_api_v2. Consumers must) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 473 Tm (negotiate the actual profile and operation masks and use bounded,) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 458 Tm (partition-relative host I/O. A source-level callback does not by itself) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 443 Tm (establish that every format variant or host profile is qualified.) Tj ET
+%%Page
+0.05 0.13 0.22 rg 0 749 595 93 re f
+0.04 0.54 0.60 rg 50 747 115 4 re f
+0.78 0.82 0.86 RG 0.6 w 50 50 m 545 50 l S
+BT /F2 9 Tf 0.62 0.86 0.90 rg 1 0 0 1 50 801 Tm (INFILTRATOR / IMPLEMENTATION REFERENCE) Tj ET
+BT /F2 19 Tf 1 1 1 rg 1 0 0 1 50 771 Tm (SFS2 / Common V2 provider) Tj ET
+BT /F1 8 Tf 0.34 0.40 0.44 rg 1 0 0 1 50 34 Tm (Implementation appendix / source revision 9cb5e7645a56) Tj ET
+BT /F1 8 Tf 0.34 0.40 0.44 rg 1 0 0 1 505 34 Tm (PAGE 12) Tj ET
+BT /F2 13 Tf 0.02 0.45 0.50 rg 1 0 0 1 50 710 Tm (4. INTEGRITY, MUTATION, ALLOCATION AND RECOVERY) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 686 Tm (No general mutation or relocation/recovery claim follows from these) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 671 Tm (callbacks. Validate independent media, interrupted writes and recovery) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 656 Tm (separately. For destructive operations, require the applicable exclusive) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 641 Tm (writable host, durability contract and format-specific validation. Never) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 626 Tm (silently substitute a kernel or FUSE driver or treat a rejected or) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 611 Tm (unavailable operation as success. Preserve original disk-format semantics;) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 596 Tm (relocation and recovery are separate from ordinary file I/O.) Tj ET
+BT /F2 13 Tf 0.02 0.45 0.50 rg 1 0 0 1 50 566 Tm (5. BUILD, INSTALLATION AND RELEASE) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 542 Tm (The target installation is /System/Filesystems/SFS2.so and) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 527 Tm (/System/Resources/Documentation/Filesystem-SFS2.pdf. The project release) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 512 Tm (policy is a portable amd64 DEB and a CPU-native source-first RUN, with) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 497 Tm (GitHub's automatic source archive; do not treat this policy statement as) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 482 Tm (verification of the current installer payload. The release workflow is the) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 467 Tm (authoritative executable build and package specification. Historical) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 452 Tm (adapters and test artifacts are not additional production filesystem) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 437 Tm (authorities.) Tj ET
+BT /F2 13 Tf 0.02 0.45 0.50 rg 1 0 0 1 50 407 Tm (6. QUALIFICATION AND LIMITATIONS) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 383 Tm (Recorded qualification workflow) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 368 Tm (\(https://github.com/Infiltrator-Projects/Filesystem-SFS2/actions/runs/4551) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 353 Tm (6226055\) | Current workflows) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 338 Tm (\(https://github.com/Infiltrator-Projects/Filesystem-SFS2/actions?query=bra) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 323 Tm (nch%3Amain\). A successful workflow establishes the tested scope only, not) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 308 Tm (complete original-format parity, physical-media crash safety, or) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 293 Tm (production BOOT/kernel integration. Use disposable images for destructive) Tj ET
+BT /F1 10.2 Tf 0.07 0.16 0.23 rg 1 0 0 1 50 278 Tm (qualification.) Tj ET
