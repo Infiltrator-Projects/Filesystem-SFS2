@@ -71,6 +71,23 @@ int main(int argc,char **argv)
     CHECK(core->mount(&ro,&mount,&info)==IFS_FS_OK && mount);
     CHECK(info.variant==variant && info.total_bytes==m.bytes &&
           info.free_bytes==m.bytes-36u*4096u);
+    const IfsFsAllocationOpsV2 *allocation=(const void*)ifs_fs_group_v2(api,IFS_FS_GROUP_ALLOCATION);
+    CHECK(allocation && allocation->map);
+    uint64_t at=0u,unknown=0u,free_bytes=0u,allocated=0u;
+    for(;;) {
+        IfsFsAllocationRangeV2 page[2]={{0}};
+        uint32_t count=99u;uint64_t next=at;
+        int rc=allocation->map(mount,at,page,2u,&count);
+        CHECK(ifs_fs_allocation_page_v2_valid(m.bytes,at,rc,page,2u,count,&next,&unknown));
+        if(rc==IFS_FS_END)break;
+        for(uint32_t i=0;i<count;++i) {
+            if(page[i].state==IFS_FS_SPACE_FREE)free_bytes+=page[i].length;
+            else {CHECK(page[i].state==IFS_FS_SPACE_ALLOCATED);allocated+=page[i].length;}
+        }
+        CHECK(next>at);at=next;
+    }
+    CHECK(at==m.bytes && !unknown && free_bytes==info.free_bytes &&
+          allocated==36u*4096u && free_bytes+allocated==m.bytes);
     char label[32];
     uint32_t label_bytes=0;
     CHECK(vol->label && vol->label(mount,label,sizeof(label),&label_bytes)==IFS_FS_OK &&

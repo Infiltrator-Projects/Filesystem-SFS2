@@ -237,6 +237,7 @@ typedef struct {
     uintptr_t cookie;
     unsigned active;
     IfsSfs2Reader reader;
+    uint32_t bitmap_base;
 } Sfs2Session;
 static Sfs2Session readers[IFS_FS_RO_MAX_SESSIONS_V2];
 
@@ -314,6 +315,7 @@ static int mount_impl(const IfsFsHostRuntimeV2 *h, void **volume,
             reader->total_blocks=candidate.total_blocks;
             reader->object_root=candidate.object_root;
             reader->extent_root=candidate.extent_root;
+            readers[i].bitmap_base=candidate.bitmap_base;
             readers[i].cookie=(uintptr_t)token;
             *volume=token;
             break;
@@ -559,6 +561,82 @@ static int map_path(void *volume,const char *path,uint64_t first,
     return session?finish_reader(session,ifs_sfs2_ro_map(&session->reader,path,
                        first,out,capacity,written)):IFS_FS_INVALID;
 }
+/* The read-only mount has already verified every bitmap checksum and
+ * required metadata ownership. Retain its bitmap geometry in the pinned
+ * session. Read only the relevant bitmap blocks per page; the host's
+ * immutable media lease prevents a concurrent allocation change. */
+static int allocation_page(const Sfs2Session *session,uint64_t first,
+                          IfsFsAllocationRangeV2 *out,uint32_t capacity,uint32_t *written)
+{
+    const IfsSfs2Reader *r=&session->reader;
+    const IfsFsHostRuntimeV2 *h=&r->host;
+    const uint64_t limit=h->volume_bytes;
+    const uint64_t fs_bytes=(uint64_t)r->total_blocks*r->block_bytes;
+    if(first>limit || fs_bytes>limit)return IFS_FS_INVALID;
+    if(first==limit)return IFS_FS_END;
+    uint32_t bits=0u,groups=0u;
+    if(ifs_sfs2_compute_bitmap_layout(r->block_bytes,r->total_blocks,&bits,&groups)!=0 ||
+       !bits || !groups || (uint64_t)session->bitmap_base+groups>r->total_blocks)
+        return IFS_FS_CORRUPT;
+    uint8_t *raw=h->allocate(h->context,r->block_bytes);
+    if(!raw)return IFS_FS_NO_MEMORY;
+    IfsFsAllocationRangeV2 page[64]={{0}};
+    uint32_t count=0u,loaded=UINT32_MAX,scanned=0u;
+    uint64_t at=first;
+    int rc=IFS_FS_OK;
+    while(at<limit && scanned<65536u) {
+        if(h->cancelled && h->cancelled(h->context)){rc=IFS_FS_BUSY;goto done;}
+        uint32_t state;
+        uint64_t end;
+        if(at>=fs_bytes) {
+            state=IFS_FS_SPACE_RESERVED;end=limit;
+        } else {
+            const uint64_t block=at/r->block_bytes;
+            const uint32_t group=(uint32_t)(block/bits),bit=(uint32_t)(block%bits);
+            if(group>=groups){rc=IFS_FS_CORRUPT;goto done;}
+            if(group!=loaded) {
+                const uint32_t number=session->bitmap_base+group;
+                rc=ifs_fs_host_read_bytes_v2(h,(uint64_t)number*r->block_bytes,
+                                             raw,r->block_bytes);
+                if(rc!=IFS_FS_OK)goto done;
+                if(!ifs_sfs2_validate_block_header(raw,r->block_bytes,number,
+                                                   UINT32_C(0x42544d50))) {
+                    rc=IFS_FS_CORRUPT;goto done;
+                }
+                loaded=group;
+            }
+            state=(raw[IFS_SFS2_BLOCK_HEADER_SIZE+(bit>>3u)]&
+                   (uint8_t)(0x80u>>(bit&7u)))?IFS_FS_SPACE_FREE:IFS_FS_SPACE_ALLOCATED;
+            end=(block+1u)*r->block_bytes;
+        }
+        if(count && page[count-1u].state==state)page[count-1u].length+=end-at;
+        else {
+            if(count==capacity)break;
+            page[count++]=(IfsFsAllocationRangeV2){
+                .physical_offset=at,.length=end-at,.state=state};
+        }
+        at=end;++scanned;
+    }
+    memcpy(out,page,count*sizeof(*page));*written=count;
+done:
+    h->release(h->context,raw);
+    return rc;
+}
+static int allocation_map(void *volume,uint64_t first,IfsFsAllocationRangeV2 *out,
+                          uint32_t capacity,uint32_t *written)
+{
+    if(!written)return IFS_FS_INVALID;
+    *written=0u;
+    if(!out||!capacity||capacity>64u)return IFS_FS_INVALID;
+    Sfs2Session *session=acquire_reader(volume);
+    return session?finish_reader(session,allocation_page(session,first,out,capacity,written)):
+        IFS_FS_INVALID;
+}
+static const IfsFsAllocationOpsV2 allocation_ops={
+    .header={IFS_FS_GROUP_ABI_V2,sizeof(allocation_ops),IFS_FS_GROUP_ALLOCATION,0u,
+             IFS_FS_ALLOCATION_MAP},
+    .map=allocation_map
+};
 static const IfsFsDefragOpsV2 defrag_ops={
     .header={IFS_FS_GROUP_ABI_V2,sizeof(defrag_ops),IFS_FS_GROUP_DEFRAG,0u,
              IFS_FS_DEFRAG_MAP},
@@ -607,6 +685,7 @@ static const IfsFsGroupHeaderV2 *group(
         return &volume.header;
 #if !defined(IFS_SFS2_FIRMWARE_BUILD)
     if(id==IFS_FS_GROUP_DEFRAG)return &defrag_ops.header;
+    if(id==IFS_FS_GROUP_ALLOCATION)return &allocation_ops.header;
 #endif
     return NULL;
 }
@@ -622,7 +701,7 @@ static const IfsFsModuleApiV2 api = {
     IFS_FS_GROUP_BIT(IFS_FS_GROUP_CORE) |
         IFS_FS_GROUP_BIT(IFS_FS_GROUP_VOLUME)
 #if !defined(IFS_SFS2_FIRMWARE_BUILD)
-        |IFS_FS_GROUP_BIT(IFS_FS_GROUP_DEFRAG)
+        |IFS_FS_GROUP_BIT(IFS_FS_GROUP_DEFRAG)|IFS_FS_GROUP_BIT(IFS_FS_GROUP_ALLOCATION)
 #endif
         ,
     group
