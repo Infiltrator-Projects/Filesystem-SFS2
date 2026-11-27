@@ -35,4 +35,4 @@ The target installation is `/System/Filesystems/SFS2.so` and `/System/Resources/
 
 The original-format reference and historical migration notes describe different evidence from the current production provider. When descriptions disagree, the current exported descriptor, implementation, executable tests and exact-revision release evidence take precedence.
 
-The [engineering reference](docs/SFS2-TECHNICAL-REFERENCE.md) adds field-level original-format guidance. Earlier material is preserved in the PDF.
+The [engineering reference](docs/SFS2-TECHNICAL-REFERENCE.md) adds field-level original-format guidance. The PDF and editable reference contain one integrated manual.
