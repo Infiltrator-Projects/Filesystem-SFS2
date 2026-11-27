@@ -4,7 +4,7 @@
 
 SFS/2 extends Amiga Smart File System to larger file sizes and extent counts. Its binary root ID is 0x53465302 and supported structure version is 4. The baseline SFS/0 version 3 is not interchangeable. This chapter uses the preserved amipart native formatter and the repository's SFS2 disk layout and reader as evidence, not a complete original vendor specification. The common root and administrative architecture remains related to SFS/0; object and extent encoding differs materially. A parser must distinguish the two before reading variable records.
 
-The AmigaOS 4 filesystem capability table separates SFS/2 from SFS/0. Handler-advertised capacity limits do not automatically define the theoretical on-media bounds. Earlier 68K handlers must not interpret the newer disk structures as SFS/0.
+The AmigaOS 4 capability table distinguishes these formats; earlier 68K handlers must not interpret SFS/2 as SFS/0. Handler-advertised limits are not necessarily theoretical on-media bounds.
 
 ## Root copies and geometry
 

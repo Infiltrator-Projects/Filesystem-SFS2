@@ -20,17 +20,17 @@ BT /F2 22 Tf 43 784 Td (SFS2 - technical reference) Tj ET
 1 1 1 rg BT /F2 10 Tf 43 811 Td (INFILTRATOR / FILESYSTEM ENGINEERING) Tj ET
 BT /F2 22 Tf 43 784 Td (SFS2 - technical reference) Tj ET
 0.08 0.14 0.20 rg BT /F2 15 Tf 43 736 Td (1. History and version boundary) Tj ET
-0.08 0.14 0.20 rg BT /F3 10 Tf 43 706 Td (SFS/2 extends Amiga Smart File System to larger file sizes and extent counts. Its) Tj ET
-0.08 0.14 0.20 rg BT /F3 10 Tf 43 692 Td (binary root ID is 0x53465302 and supported structure version is 4. The baseline) Tj ET
-0.08 0.14 0.20 rg BT /F3 10 Tf 43 678 Td (SFS/0 version 3 is not interchangeable. This chapter uses the preserved amipart) Tj ET
-0.08 0.14 0.20 rg BT /F3 10 Tf 43 664 Td (native formatter and the repository's SFS2 disk layout and reader as evidence, not) Tj ET
-0.08 0.14 0.20 rg BT /F3 10 Tf 43 650 Td (a complete original vendor specification. The common root and administrative) Tj ET
-0.08 0.14 0.20 rg BT /F3 10 Tf 43 636 Td (architecture remains related to SFS/0; object and extent encoding differs) Tj ET
-0.08 0.14 0.20 rg BT /F3 10 Tf 43 622 Td (materially. A parser must distinguish the two before reading variable records.) Tj ET
-0.08 0.14 0.20 rg BT /F3 10 Tf 43 598 Td (The AmigaOS 4 filesystem capability table separates SFS/2 from SFS/0.) Tj ET
-0.08 0.14 0.20 rg BT /F3 10 Tf 43 584 Td (Handler-advertised capacity limits do not automatically define the theoretical) Tj ET
-0.08 0.14 0.20 rg BT /F3 10 Tf 43 570 Td (on-media bounds. Earlier 68K handlers must not interpret the newer disk structures) Tj ET
-0.08 0.14 0.20 rg BT /F3 10 Tf 43 556 Td (as SFS/0.) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 706 Td (SFS/2 extends Amiga Smart File System to larger file sizes and extent counts.) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 692 Td (Its binary root ID is 0x53465302 and supported structure version is 4. The) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 678 Td (baseline SFS/0 version 3 is not interchangeable. This chapter uses the) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 664 Td (preserved amipart native formatter and the repository's SFS2 disk layout and) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 650 Td (reader as evidence, not a complete original vendor specification. The common) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 636 Td (root and administrative architecture remains related to SFS/0; object and) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 622 Td (extent encoding differs materially. A parser must distinguish the two before) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 608 Td (reading variable records.) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 584 Td (The AmigaOS 4 capability table distinguishes these formats; earlier 68K) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 570 Td (handlers must not interpret SFS/2 as SFS/0. Handler-advertised limits are not) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 556 Td (necessarily theoretical on-media bounds.) Tj ET
 0.2 0.3 0.4 rg BT /F1 9 Tf 43 32 Td (Historical development and engineering reference | 2) Tj ET
 
 %%Page
