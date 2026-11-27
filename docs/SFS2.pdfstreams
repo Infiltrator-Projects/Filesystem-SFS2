@@ -31,6 +31,13 @@ BT /F2 22 Tf 43 784 Td (SFS2 - technical reference) Tj ET
 0.08 0.14 0.20 rg BT /F3 10 Tf 43 584 Td (The AmigaOS 4 capability table distinguishes these formats; earlier 68K) Tj ET
 0.08 0.14 0.20 rg BT /F3 10 Tf 43 570 Td (handlers must not interpret SFS/2 as SFS/0. Handler-advertised limits are not) Tj ET
 0.08 0.14 0.20 rg BT /F3 10 Tf 43 556 Td (necessarily theoretical on-media bounds.) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 532 Td (The cited AmigaOS table lists a 107-character filename limit, 512-byte) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 518 Td (recommended blocks, 1 TiB file-size support and nominal partition capacity of 1) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 504 Td (TiB at 512-byte blocks \(up to 64 TiB at 32 KiB blocks\). These are published) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 490 Td (handler limits, not the full 48-bit encoded size or independently qualified) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 476 Td (provider limits. Older products labelled SFS2 can predate and be incompatible) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 462 Td (with the later SFS/2 version-4 layout. Record the producing handler and version) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 448 Td (in test fixtures.) Tj ET
 0.2 0.3 0.4 rg BT /F1 9 Tf 43 32 Td (Historical development and engineering reference | 2) Tj ET
 
 %%Page
@@ -49,6 +56,11 @@ BT /F2 22 Tf 43 784 Td (SFS2 - technical reference) Tj ET
 0.08 0.14 0.20 rg BT /F3 10 Tf 43 594 Td (regions; a larger sequence is not enough if the referenced state is corrupt.) Tj ET
 0.08 0.14 0.20 rg BT /F3 10 Tf 43 580 Td (Compare sequence rollover using independently established native rules. Addresses) Tj ET
 0.08 0.14 0.20 rg BT /F3 10 Tf 43 566 Td (inside the volume are partition-relative block numbers.) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 542 Td (The baseline decoder uses a 128-byte root record. A 36-byte RootInfo record) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 528 Td (contains deleted block/file counts, free blocks, creation date, last allocated) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 514 Td (block, last admin-space block, last extent node, last object node and roving) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 500 Td (pointer. Treat these counts and hints as bounded summaries; validate against) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 486 Td (actual allocation ownership.) Tj ET
 0.2 0.3 0.4 rg BT /F1 9 Tf 43 32 Td (Historical development and engineering reference | 3) Tj ET
 
 %%Page
@@ -98,6 +110,10 @@ BT /F2 22 Tf 43 784 Td (SFS2 - technical reference) Tj ET
 0.08 0.14 0.20 rg BT /F3 10 Tf 43 608 Td (size. Reject missing terminators or overlong names, not merely a missing final) Tj ET
 0.08 0.14 0.20 rg BT /F3 10 Tf 43 594 Td (padding byte. Object type flags include hidden 1, hard link 32, link 64 and) Tj ET
 0.08 0.14 0.20 rg BT /F3 10 Tf 43 580 Td (directory 128; interpret the union only after checking type.) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 556 Td (The historical native filename limit is 107 bytes in this single-byte) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 542 Td (representation. The SLNK soft-link block carries the common header,) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 528 Td (parent/next/previous linkage and target string. Interpret the link path under) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 514 Td (native semantics before translating to a host presentation.) Tj ET
 0.2 0.3 0.4 rg BT /F1 9 Tf 43 32 Td (Historical development and engineering reference | 6) Tj ET
 
 %%Page
@@ -150,6 +166,11 @@ BT /F2 22 Tf 43 784 Td (SFS2 - technical reference) Tj ET
 0.08 0.14 0.20 rg BT /F3 10 Tf 43 594 Td (transaction encoding, replay ordering, root sequence rollover and all native link) Tj ET
 0.08 0.14 0.20 rg BT /F3 10 Tf 43 580 Td (semantics need independent original-format evidence before general writer) Tj ET
 0.08 0.14 0.20 rg BT /F3 10 Tf 43 566 Td (qualification.) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 542 Td (A reference empty-volume topology places OBJC with RootInfo at the root object) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 528 Td (block, HTAB at root+1, TROK at root+2, BNDC at root+3, NDC at root+4 and an) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 514 Td (optional recycled OBJC at root+5. Root copies and bitmap/admin-space locations) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 500 Td (must be independently validated; this topology is not a substitute for reading) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 486 Td (recorded pointers.) Tj ET
 0.2 0.3 0.4 rg BT /F1 9 Tf 43 32 Td (Historical development and engineering reference | 9) Tj ET
 
 %%Page
@@ -200,4 +221,8 @@ BT /F2 22 Tf 43 784 Td (SFS2 - technical reference) Tj ET
 0.08 0.14 0.20 rg BT /F3 10 Tf 43 650 Td (commit. Verify large-file and long-extent fields against genuine SFS/2 media,) Tj ET
 0.08 0.14 0.20 rg BT /F3 10 Tf 43 636 Td (including greater-than-4-GiB lengths. Exact native recovery, node allocation, links) Tj ET
 0.08 0.14 0.20 rg BT /F3 10 Tf 43 622 Td (and name rules remain subject to independent qualification.) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 598 Td (Historical cross-check sources include SmartFileSystem 1.279) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 584 Td (\(https://aminet.net/package/disk/misc/SFS\), AROS SFS low-level structures and) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 570 Td (transaction code, AmiPart src/nativefmt.c and Aaru.Filesystems/SFS. The source) Tj ET
+0.08 0.14 0.20 rg BT /F3 10 Tf 43 556 Td (comparison does not replace genuine handler-produced image tests.) Tj ET
 0.2 0.3 0.4 rg BT /F1 9 Tf 43 32 Td (Historical development and engineering reference | 12) Tj ET
