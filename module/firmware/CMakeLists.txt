@@ -17,9 +17,12 @@ target_compile_features(sfs2-boot PRIVATE c_std_11)
 target_compile_definitions(sfs2-boot PRIVATE IFS_SFS2_FIRMWARE_BUILD=1)
 target_include_directories(sfs2-boot PRIVATE "${COMMON_INCLUDE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../native/filesystems/sfs2/core")
+# Firmware uses AMD64 SysV without CET, SIMD state assumptions,
+# packed relative relocations or non-4-KiB load alignment. Hosted builds
+# retain their separate native optimization profile.
 target_compile_options(sfs2-boot PRIVATE
     -Wall -Wextra -Wpedantic -Werror -ffreestanding -fno-builtin
-    -fno-tree-loop-distribute-patterns -fno-stack-protector -mno-red-zone
+    -fno-tree-loop-distribute-patterns -fno-stack-protector -mno-red-zone -fcf-protection=none -mgeneral-regs-only
     -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0)
 target_link_options(sfs2-boot PRIVATE
-    -nostdlib -Wl,-Bsymbolic,-z,defs,-z,noexecstack,-z,relro,-z,now)
+    -nostdlib -Wl,-z,nopack-relative-relocs,-z,max-page-size=4096,-Bsymbolic,-z,defs,-z,noexecstack,-z,relro,-z,now)
